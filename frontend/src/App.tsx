@@ -1,8 +1,8 @@
 import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
-import { Produtos } from "./pages/Produtos";
-import { MrpResultado } from "./pages/MrpResultado";
-import { Ordens } from "./pages/Ordens";
-import { BOM } from "./pages/BOM";
+import Produtos from "./pages/Produtos";
+import MrpResultado from "./pages/MrpResultado";
+import Ordens from "./pages/Ordens";
+import BOM from "./pages/BOM";
 
 function App() {
   return (

@@ -1,5 +1,7 @@
-import axios from 'axios';
+import axios from "axios";
 
-export const api = axios.create({
-  baseURL: 'http://localhost:8000/api/',
+const api = axios.create({
+  baseURL: "http://localhost:8000/api", // ajuste se usar ngrok ou IP da rede local
 });
+
+export default api;

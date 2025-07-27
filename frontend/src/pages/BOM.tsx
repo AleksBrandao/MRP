@@ -1,107 +1,180 @@
-// src/pages/BOM.tsx
-import { useState } from 'react';
+import { useEffect, useState } from "react";
+import api from "../services/api";
 
-interface Componente {
+interface Produto {
   id: number;
   nome: string;
+}
+
+interface BOMItem {
+  id: number;
+  produto_pai: number;
+  produto_pai_nome: string;
+  componente: number;
+  componente_nome: string;
   quantidade: number;
 }
 
-export function BOM() {
-  const [componentes, setComponentes] = useState<Componente[]>([
-    { id: 1, nome: 'Parafuso', quantidade: 4 },
-    { id: 2, nome: 'Placa base', quantidade: 1 },
-  ]);
+export default function BOM() {
+  const [bom, setBOM] = useState<BOMItem[]>([]);
+  const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [form, setForm] = useState({ produto_pai: 0, componente: 0, quantidade: 1 });
+  const [editId, setEditId] = useState<number | null>(null);
 
-  const [modalAberto, setModalAberto] = useState(false);
-  const [nome, setNome] = useState('');
-  const [quantidade, setQuantidade] = useState(1);
+  useEffect(() => {
+    carregarBOM();
+    carregarProdutos();
+  }, []);
 
-  const adicionarComponente = () => {
-    if (!nome.trim() || quantidade < 1) return;
+  const carregarBOM = () => {
+    api.get("/bom/")
+      .then((res) => setBOM(res.data))
+      .catch((err) => console.error("Erro ao carregar BOM:", err));
+  };
 
-    const novo = {
-      id: componentes.length + 1,
-      nome,
-      quantidade,
-    };
+  const carregarProdutos = () => {
+    api.get("/produtos/")
+      .then((res) => setProdutos(res.data))
+      .catch((err) => console.error("Erro ao carregar produtos:", err));
+  };
 
-    setComponentes([...componentes, novo]);
-    setNome('');
-    setQuantidade(1);
-    setModalAberto(false);
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editId) {
+      api.put(`/bom/${editId}/`, form)
+        .then(() => {
+          setEditId(null);
+          setForm({ produto_pai: 0, componente: 0, quantidade: 1 });
+          carregarBOM();
+        })
+        .catch((err) => console.error("Erro ao editar item da BOM:", err));
+    } else {
+      api.post("/bom/", form)
+        .then(() => {
+          setForm({ produto_pai: 0, componente: 0, quantidade: 1 });
+          carregarBOM();
+        })
+        .catch((err) => console.error("Erro ao adicionar item à BOM:", err));
+    }
+  };
+
+  const iniciarEdicao = (item: BOMItem) => {
+    setEditId(item.id);
+    setForm({
+      produto_pai: item.produto_pai,
+      componente: item.componente,
+      quantidade: item.quantidade,
+    });
+  };
+
+  const cancelarEdicao = () => {
+    setEditId(null);
+    setForm({ produto_pai: 0, componente: 0, quantidade: 1 });
+  };
+
+  const handleDelete = (id: number) => {
+    if (confirm("Deseja excluir este item da BOM?")) {
+      api.delete(`/bom/${id}/`)
+        .then(carregarBOM)
+        .catch((err) => console.error("Erro ao excluir item da BOM:", err));
+    }
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Lista de Materiais (BOM)</h1>
-        <button
-          onClick={() => setModalAberto(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
-        >
-          Novo Componente
-        </button>
-      </div>
+    <div className="p-4">
+      <h1 className="text-2xl font-bold mb-4">
+        {editId ? "Editar Estrutura de Produto (BOM)" : "Cadastro de Estrutura de Produto (BOM)"}
+      </h1>
 
-      <table className="w-full border border-gray-200 rounded overflow-hidden text-sm">
-        <thead className="bg-gray-100 text-left">
+      <form onSubmit={handleSubmit} className="space-y-3 mb-6">
+        <select
+          value={form.produto_pai}
+          onChange={(e) => setForm({ ...form, produto_pai: Number(e.target.value) })}
+          className="border px-3 py-1 w-full"
+          required
+        >
+          <option value={0}>Produto Pai</option>
+          {produtos.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.nome}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={form.componente}
+          onChange={(e) => setForm({ ...form, componente: Number(e.target.value) })}
+          className="border px-3 py-1 w-full"
+          required
+        >
+          <option value={0}>Componente</option>
+          {produtos.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.nome}
+            </option>
+          ))}
+        </select>
+
+        <input
+          type="number"
+          placeholder="Quantidade"
+          value={form.quantidade}
+          onChange={(e) => setForm({ ...form, quantidade: Number(e.target.value) })}
+          className="border px-3 py-1 w-full"
+          min={1}
+          required
+        />
+
+        <div className="flex gap-2">
+          <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">
+            {editId ? "Salvar Alterações" : "Adicionar Componente"}
+          </button>
+          {editId && (
+            <button
+              type="button"
+              onClick={cancelarEdicao}
+              className="bg-gray-400 text-white px-4 py-2 rounded"
+            >
+              Cancelar
+            </button>
+          )}
+        </div>
+      </form>
+
+      <h2 className="text-xl font-semibold mb-2">Estrutura Atual</h2>
+      <table className="min-w-full border border-gray-300">
+        <thead className="bg-gray-100">
           <tr>
-            <th className="px-4 py-2 border-b">ID</th>
-            <th className="px-4 py-2 border-b">Nome</th>
-            <th className="px-4 py-2 border-b">Quantidade</th>
+            <th className="border px-4 py-2">Produto Pai</th>
+            <th className="border px-4 py-2">Componente</th>
+            <th className="border px-4 py-2">Quantidade</th>
+            <th className="border px-4 py-2">Ações</th>
           </tr>
         </thead>
         <tbody>
-          {componentes.map((comp) => (
-            <tr key={comp.id} className="hover:bg-gray-50">
-              <td className="px-4 py-2 border-b">{comp.id}</td>
-              <td className="px-4 py-2 border-b">{comp.nome}</td>
-              <td className="px-4 py-2 border-b">{comp.quantidade}</td>
+          {bom.map((item) => (
+            <tr key={item.id}>
+              <td className="border px-4 py-2">{item.produto_pai_nome}</td>
+              <td className="border px-4 py-2">{item.componente_nome}</td>
+              <td className="border px-4 py-2">{item.quantidade}</td>
+              <td className="border px-4 py-2 text-center space-x-2">
+                <button
+                  onClick={() => iniciarEdicao(item)}
+                  className="text-blue-600 hover:underline"
+                >
+                  Editar
+                </button>
+                <button
+                  onClick={() => handleDelete(item.id)}
+                  className="text-red-600 hover:underline"
+                >
+                  Excluir
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
-
-      {modalAberto && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded shadow-lg w-full max-w-md">
-            <h2 className="text-lg font-semibold mb-4">Novo Componente</h2>
-
-            <input
-              type="text"
-              placeholder="Nome do componente"
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-              className="w-full border border-gray-300 px-3 py-2 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
-
-            <input
-              type="number"
-              placeholder="Quantidade"
-              value={quantidade}
-              onChange={(e) => setQuantidade(Number(e.target.value))}
-              className="w-full border border-gray-300 px-3 py-2 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-400"
-              min={1}
-            />
-
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setModalAberto(false)}
-                className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={adicionarComponente}
-                className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
-              >
-                Salvar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
