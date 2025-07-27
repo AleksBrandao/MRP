@@ -141,3 +141,44 @@ def exportar_mrp_excel(request):
     response["Content-Disposition"] = "attachment; filename=resultado_mrp_completo.xlsx"
     wb.save(response)
     return response
+
+@api_view(["GET"])
+def historico_produto(request, produto_id):
+    try:
+        produto = Produto.objects.get(id=produto_id)
+    except Produto.DoesNotExist:
+        return Response({"erro": "Produto não encontrado"}, status=404)
+
+    historico = produto.history.all().order_by("-history_date")
+
+    data = []
+    for versao in historico:
+        data.append({
+            "estoque": versao.estoque,
+            "data": versao.history_date,
+            "usuario": versao.history_user.username if versao.history_user else "Desconhecido",
+            "tipo": versao.history_type,
+        })
+
+    return Response(data)
+
+@api_view(["GET"])
+def historico_todos_os_produtos(request):
+    from .models import Produto
+
+    todos = []
+    for produto in Produto.objects.all():
+        for versao in produto.history.all().order_by("-history_date"):
+            todos.append({
+                "produto_id": produto.id,
+                "produto_nome": produto.nome,
+                "estoque": versao.estoque,
+                "usuario": versao.history_user.username if versao.history_user else "Desconhecido",
+                "tipo": versao.history_type,
+                "data": versao.history_date,
+            })
+    
+    # Ordenar por data descrescente
+    todos.sort(key=lambda x: x["data"], reverse=True)
+
+    return Response(todos)

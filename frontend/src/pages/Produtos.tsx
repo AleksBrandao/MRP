@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "../services/api";
+import HistoricoProduto from "../components/HistoricoProduto";
+
 
 interface Produto {
   id: number;
@@ -124,6 +126,11 @@ export default function Produtos() {
           )}
         </div>
       </form>
+
+      {editId && (
+  <HistoricoProduto produtoId={editId} />
+)}
+
 
       <h2 className="text-xl font-semibold mb-2">Lista de Produtos</h2>
       <table className="min-w-full border border-gray-300">

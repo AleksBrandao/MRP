@@ -26,7 +26,9 @@ export default function MrpResultado() {
   useEffect(() => {
     api.get("/mrp/")
       .then((res) => {
-        const itens = res.data as ResultadoMRP[];
+        const itens = (res.data as ResultadoMRP[]).sort((a, b) =>
+          a.nivel - b.nivel || a.nome.localeCompare(b.nome)
+        );
         const mapa: { [codigo: string]: ResultadoMRPComFilhos } = {};
         const raiz: ResultadoMRPComFilhos[] = [];
 
