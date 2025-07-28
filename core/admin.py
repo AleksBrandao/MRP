@@ -4,9 +4,9 @@ from .models import Produto, BOM, OrdemProducao
 
 @admin.register(Produto)
 class ProdutoAdmin(SimpleHistoryAdmin):  # herda do SimpleHistoryAdmin
-    list_display = ('codigo', 'nome', 'estoque', 'lead_time')
+    list_display = ('codigo', 'nome', 'estoque', 'lead_time', 'tipo')
     search_fields = ('codigo', 'nome')
-    list_filter = ('lead_time',)
+    list_filter = ('lead_time','tipo',)
 
 @admin.register(BOM)
 class BOMAdmin(admin.ModelAdmin):

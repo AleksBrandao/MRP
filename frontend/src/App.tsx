@@ -4,6 +4,7 @@ import MrpResultado from "./pages/MrpResultado";
 import Ordens from "./pages/Ordens";
 import BOM from "./pages/BOM";
 import HistoricoGeral from "./pages/HistoricoGeral";
+import DetalhesMRP from "./pages/DetalhesMRP";
 
 
 function App() {
@@ -24,6 +25,7 @@ function App() {
             Executar MRP
           </Link>
           <Link to="/historico-geral" className="hover:text-blue-600 transition">Histórico</Link>
+          <Link to="/mrp-detalhado">📋 MRP Detalhado</Link>
 
         </nav>
         <Routes>
@@ -32,6 +34,7 @@ function App() {
           <Route path="/bom" element={<BOM />} />
           <Route path="/mrp" element={<MrpResultado />} />
           <Route path="/historico-geral" element={<HistoricoGeral />} />
+          <Route path="/mrp-detalhado" element={<DetalhesMRP />} />
 
         </Routes>
       </div>

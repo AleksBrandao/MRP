@@ -2,14 +2,27 @@ import { useEffect, useState } from "react";
 import api from "../services/api";
 import HistoricoProduto from "../components/HistoricoProduto";
 
-
 interface Produto {
   id: number;
   codigo: string;
   nome: string;
   estoque: number;
   lead_time: number;
+  tipo: string;
 }
+
+const getTipoLabel = (tipo: string) => {
+  switch (tipo) {
+    case "produto":
+      return "Produto Acabado";
+    case "materia_prima":
+      return "Matéria-Prima";
+    case "lista":
+      return "Lista Técnica (BOM)";
+    default:
+      return tipo;
+  }
+};
 
 export default function Produtos() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -18,8 +31,10 @@ export default function Produtos() {
     nome: "",
     estoque: 0,
     lead_time: 0,
+    tipo: "produto",
   });
   const [editId, setEditId] = useState<number | null>(null);
+  const [filtroTipo, setFiltroTipo] = useState<string>("");
 
   useEffect(() => {
     carregarProdutos();
@@ -37,14 +52,14 @@ export default function Produtos() {
       api.put(`/produtos/${editId}/`, form)
         .then(() => {
           setEditId(null);
-          setForm({ codigo: "", nome: "", estoque: 0, lead_time: 0 });
+          setForm({ codigo: "", nome: "", estoque: 0, lead_time: 0, tipo: "produto" });
           carregarProdutos();
         })
         .catch((err) => console.error("Erro ao editar produto:", err));
     } else {
       api.post("/produtos/", form)
         .then(() => {
-          setForm({ codigo: "", nome: "", estoque: 0, lead_time: 0 });
+          setForm({ codigo: "", nome: "", estoque: 0, lead_time: 0, tipo: "produto" });
           carregarProdutos();
         })
         .catch((err) => console.error("Erro ao adicionar produto:", err));
@@ -58,12 +73,13 @@ export default function Produtos() {
       nome: produto.nome,
       estoque: produto.estoque,
       lead_time: produto.lead_time,
+      tipo: produto.tipo,
     });
   };
 
   const cancelarEdicao = () => {
     setEditId(null);
-    setForm({ codigo: "", nome: "", estoque: 0, lead_time: 0 });
+    setForm({ codigo: "", nome: "", estoque: 0, lead_time: 0, tipo: "produto" });
   };
 
   const handleDelete = (id: number) => {
@@ -73,6 +89,10 @@ export default function Produtos() {
         .catch((err) => console.error("Erro ao excluir produto:", err));
     }
   };
+
+  const produtosFiltrados = filtroTipo
+    ? produtos.filter((p) => p.tipo === filtroTipo)
+    : produtos;
 
   return (
     <div className="p-4">
@@ -111,6 +131,15 @@ export default function Produtos() {
           onChange={(e) => setForm({ ...form, lead_time: Number(e.target.value) })}
           className="border px-3 py-1 w-full"
         />
+        <select
+          value={form.tipo}
+          onChange={(e) => setForm({ ...form, tipo: e.target.value })}
+          className="border px-3 py-1 w-full"
+        >
+          <option value="produto">Produto Acabado</option>
+          <option value="materia_prima">Matéria-Prima</option>
+          <option value="lista">Lista Técnica (BOM)</option>
+        </select>
         <div className="flex gap-2">
           <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">
             {editId ? "Salvar Alterações" : "Adicionar Produto"}
@@ -128,11 +157,25 @@ export default function Produtos() {
       </form>
 
       {editId && (
-  <HistoricoProduto produtoId={editId} />
-)}
-
+        <HistoricoProduto produtoId={editId} />
+      )}
 
       <h2 className="text-xl font-semibold mb-2">Lista de Produtos</h2>
+
+      <div className="mb-4">
+        <label className="block mb-1">Filtrar por tipo:</label>
+        <select
+          value={filtroTipo}
+          onChange={(e) => setFiltroTipo(e.target.value)}
+          className="border px-3 py-1"
+        >
+          <option value="">Todos</option>
+          <option value="produto">Produto Acabado</option>
+          <option value="materia_prima">Matéria-Prima</option>
+          <option value="lista">Lista Técnica (BOM)</option>
+        </select>
+      </div>
+
       <table className="min-w-full border border-gray-300">
         <thead className="bg-gray-100">
           <tr>
@@ -140,16 +183,18 @@ export default function Produtos() {
             <th className="border px-4 py-2">Nome</th>
             <th className="border px-4 py-2">Estoque</th>
             <th className="border px-4 py-2">Lead Time</th>
+            <th className="border px-4 py-2">Tipo</th>
             <th className="border px-4 py-2">Ações</th>
           </tr>
         </thead>
         <tbody>
-          {produtos.map((p) => (
+          {produtosFiltrados.map((p) => (
             <tr key={p.id}>
               <td className="border px-4 py-2">{p.codigo}</td>
               <td className="border px-4 py-2">{p.nome}</td>
               <td className="border px-4 py-2">{p.estoque}</td>
               <td className="border px-4 py-2">{p.lead_time} dias</td>
+              <td className="border px-4 py-2">{getTipoLabel(p.tipo)}</td>
               <td className="border px-4 py-2 text-center space-x-2">
                 <button
                   onClick={() => iniciarEdicao(p)}

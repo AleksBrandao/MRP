@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import api from "../services/api";
 
@@ -12,6 +11,7 @@ interface ResultadoMRP {
   data_compra: string;
   nivel: number;
   codigo_pai: string | null;
+  tipo: string; // novo campo
 }
 
 interface ResultadoMRPComFilhos extends ResultadoMRP {
@@ -19,9 +19,19 @@ interface ResultadoMRPComFilhos extends ResultadoMRP {
   expandido?: boolean;
 }
 
+function getTipoLabel(tipo: string) {
+  switch (tipo) {
+    case "produto": return "Produto Acabado";
+    case "materia_prima": return "Matéria-Prima";
+    case "lista": return "Lista Técnica (BOM)";
+    default: return tipo;
+  }
+}
+
 export default function MrpResultado() {
   const [dados, setDados] = useState<ResultadoMRPComFilhos[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filtroTipo, setFiltroTipo] = useState<string>("");
 
   useEffect(() => {
     api.get("/mrp/")
@@ -61,6 +71,8 @@ export default function MrpResultado() {
   };
 
   const renderLinha = (item: ResultadoMRPComFilhos, nivel: number = 0): JSX.Element[] => {
+    if (filtroTipo && item.tipo !== filtroTipo) return [];
+
     const toggle = () => {
       item.expandido = !item.expandido;
       setDados([...dados]);
@@ -89,6 +101,7 @@ export default function MrpResultado() {
         <td className="border px-4 py-2">
           {item.data_compra ? new Date(item.data_compra).toLocaleDateString() : ""}
         </td>
+        <td className="border px-4 py-2">{getTipoLabel(item.tipo)}</td>
       </tr>
     );
 
@@ -111,6 +124,20 @@ export default function MrpResultado() {
         📥 Exportar Excel
       </a>
 
+      <div className="mb-4">
+        <label className="block mb-1">Filtrar por tipo:</label>
+        <select
+          value={filtroTipo}
+          onChange={(e) => setFiltroTipo(e.target.value)}
+          className="border px-3 py-1"
+        >
+          <option value="">Todos</option>
+          <option value="produto">Produto Acabado</option>
+          <option value="materia_prima">Matéria-Prima</option>
+          <option value="lista">Lista Técnica (BOM)</option>
+        </select>
+      </div>
+
       {loading ? (
         <p>Carregando...</p>
       ) : dados.length === 0 ? (
@@ -126,6 +153,7 @@ export default function MrpResultado() {
               <th className="border px-4 py-2 text-red-600">Faltando</th>
               <th className="border px-4 py-2">Lead Time (dias)</th>
               <th className="border px-4 py-2">Data Ideal de Compra</th>
+              <th className="border px-4 py-2">Tipo</th>
             </tr>
           </thead>
           <tbody>

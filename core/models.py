@@ -6,14 +6,20 @@ from simple_history.models import HistoricalRecords
 # models.py
 
 class Produto(models.Model):
-    codigo = models.CharField(max_length=20, unique=True)
+    TIPO_CHOICES = [
+        ('produto', 'Produto Acabado'),
+        ('materia_prima', 'Matéria-Prima'),
+        ('lista', 'Lista Técnica (BOM)'),
+    ]
+
+    codigo = models.CharField(max_length=20)
     nome = models.CharField(max_length=100)
-    estoque = models.IntegerField(default=0)
-    lead_time = models.IntegerField(help_text="Dias para reposição")
-    history = HistoricalRecords()
+    estoque = models.IntegerField()
+    lead_time = models.IntegerField()
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='produto')  # 👈 novo campo
 
     def __str__(self):
-        return f"{self.codigo} - {self.nome}"
+        return f'{self.codigo} - {self.nome}'
 
 class BOM(models.Model):
     produto_pai = models.ForeignKey(Produto, related_name='bom_pai', on_delete=models.CASCADE)

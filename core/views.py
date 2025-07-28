@@ -182,3 +182,43 @@ def historico_todos_os_produtos(request):
     todos.sort(key=lambda x: x["data"], reverse=True)
 
     return Response(todos)
+
+@api_view(['GET'])
+def mrp_detalhado(request):
+    resultado = []
+
+    componentes = BOM.objects.values_list('componente', flat=True).distinct()
+
+    for componente_id in componentes:
+        componente_obj = Produto.objects.get(id=componente_id)
+        bom_entries = BOM.objects.filter(componente_id=componente_id)
+        total_necessario = 0
+        detalhes = []
+
+        for bom in bom_entries:
+            ordens = OrdemProducao.objects.filter(produto=bom.produto_pai)
+            for op in ordens:
+                qtd = op.quantidade * bom.quantidade
+                total_necessario += qtd
+                detalhes.append({
+                    "ordem_producao": op.id,
+                    "produto_final": bom.produto_pai.nome,
+                    "qtd_produto": op.quantidade,
+                    "qtd_componente_por_unidade": bom.quantidade,
+                    "qtd_necessaria": qtd
+                })
+
+
+        faltando = total_necessario - componente_obj.estoque
+
+        resultado.append({
+            "codigo_componente": componente_obj.codigo,
+            "nome_componente": componente_obj.nome,
+            "detalhes": detalhes,
+            "total_necessario": total_necessario,
+            "em_estoque": componente_obj.estoque,
+            "faltando": max(faltando, 0),
+            "tipo": componente_obj.tipo  # 👈 NOVO CAMPO
+        })
+
+    return Response(resultado)
