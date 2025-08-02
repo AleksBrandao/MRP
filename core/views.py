@@ -1,4 +1,3 @@
-
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.http import HttpResponse
@@ -9,6 +8,10 @@ from .serializers import ProdutoSerializer, BOMSerializer, OrdemProducaoSerializ
 import openpyxl
 from openpyxl.utils import get_column_letter
 from datetime import date, timedelta
+from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser
+from rest_framework import status
+import pandas as pd
 
 class ProdutoViewSet(viewsets.ModelViewSet):
     queryset = Produto.objects.all()
@@ -96,51 +99,66 @@ def exportar_mrp_csv(request):
 
 @api_view(['GET'])
 def exportar_mrp_excel(request):
-    resultado = calcular_mrp_recursivo()
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
 
-    # Calcular menor data de entrega das ordens para estimar data_compra
+    resultado = {}
     ordens = OrdemProducao.objects.all()
-    if ordens.exists():
-        menor_data_entrega = min(ordem.data_entrega for ordem in ordens)
-    else:
-        menor_data_entrega = date.today()
 
-    for item in resultado:
-        lead = item.get("lead_time", 0)
-        item["data_compra"] = (menor_data_entrega - timedelta(days=lead)).isoformat()
+    for ordem in ordens:
+        adicionar_detalhes_recursivo(
+            produto=ordem.produto,
+            qtd_produto_op=ordem.quantidade,
+            ordem_id=ordem.id,
+            produto_final_nome=ordem.produto.nome,
+            resultado=resultado
+        )
 
-    wb = openpyxl.Workbook()
+    wb = Workbook()
     ws = wb.active
-    ws.title = "MRP Resultado"
+    ws.title = "MRP Detalhado"
 
+    # Cabeçalhos
     headers = [
-        "Código", "Nome", "Necessário", "Em Estoque", "Faltando",
-        "Lead Time", "Data de Compra", "Nível", "Código Pai"
+        "OP", "Produto Final", "Qtd OP", "Qtd por Unidade", "Qtd Necessária",
+        "Componente", "Data Necessidade", "Em Estoque", "Faltando", "Saldo Estoque"
     ]
     ws.append(headers)
 
-    for item in resultado:
-        ws.append([
-            item.get("codigo", ""),
-            item.get("nome", ""),
-            item.get("necessario", ""),
-            item.get("em_estoque", ""),
-            item.get("faltando", ""),
-            item.get("lead_time", ""),
-            item.get("data_compra", ""),
-            item.get("nivel", ""),
-            item.get("codigo_pai", ""),
-        ])
+    for comp in resultado.values():
+        estoque_disponivel = comp["em_estoque"]
+        for d in comp["detalhes"]:
+            faltando = max(0, d["qtd_necessaria"] - estoque_disponivel)
+            saldo = estoque_disponivel - d["qtd_necessaria"]
+            data = OrdemProducao.objects.get(id=int(d["ordem_producao"])).data_entrega.strftime("%d/%m/%Y")
 
-    for i in range(1, len(headers) + 1):
-        ws.column_dimensions[get_column_letter(i)].width = 18
+            ws.append([
+                d["ordem_producao"],
+                d["produto_final"],
+                d["qtd_produto"],
+                d["qtd_componente_por_unidade"],
+                d["qtd_necessaria"],
+                f"{comp['codigo_componente']} - {comp['nome_componente']}",
+                data,
+                estoque_disponivel,
+                faltando,
+                saldo
+            ])
 
-    response = HttpResponse(
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-    response["Content-Disposition"] = "attachment; filename=resultado_mrp_completo.xlsx"
+            estoque_disponivel = max(0, saldo)
+
+    # Ajustar largura das colunas
+    for col in ws.columns:
+        max_length = max(len(str(cell.value)) if cell.value else 0 for cell in col)
+        col_letter = get_column_letter(col[0].column)
+        ws.column_dimensions[col_letter].width = max_length + 2
+
+    # Resposta
+    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = 'attachment; filename="mrp_detalhado.xlsx"'
     wb.save(response)
     return response
+
 
 @api_view(["GET"])
 def historico_produto(request, produto_id):
@@ -185,40 +203,183 @@ def historico_todos_os_produtos(request):
 
 @api_view(['GET'])
 def mrp_detalhado(request):
-    resultado = []
+    resultado = {}
+    ordens = OrdemProducao.objects.all()
 
-    componentes = BOM.objects.values_list('componente', flat=True).distinct()
+    for ordem in ordens:
+        adicionar_detalhes_recursivo(
+            produto=ordem.produto,
+            qtd_produto_op=ordem.quantidade,
+            ordem_id=ordem.id,
+            produto_final_nome=ordem.produto.nome,
+            resultado=resultado
+        )
 
-    for componente_id in componentes:
-        componente_obj = Produto.objects.get(id=componente_id)
-        bom_entries = BOM.objects.filter(componente_id=componente_id)
-        total_necessario = 0
-        detalhes = []
-
-        for bom in bom_entries:
-            ordens = OrdemProducao.objects.filter(produto=bom.produto_pai)
-            for op in ordens:
-                qtd = op.quantidade * bom.quantidade
-                total_necessario += qtd
-                detalhes.append({
-                    "ordem_producao": op.id,
-                    "produto_final": bom.produto_pai.nome,
-                    "qtd_produto": op.quantidade,
-                    "qtd_componente_por_unidade": bom.quantidade,
-                    "qtd_necessaria": qtd
-                })
+    return Response(list(resultado.values()))
 
 
-        faltando = total_necessario - componente_obj.estoque
+def adicionar_detalhes_recursivo(produto, qtd_produto_op, ordem_id, produto_final_nome, resultado, nivel=0):
+    boms = BOM.objects.filter(produto_pai=produto)
 
-        resultado.append({
-            "codigo_componente": componente_obj.codigo,
-            "nome_componente": componente_obj.nome,
-            "detalhes": detalhes,
-            "total_necessario": total_necessario,
-            "em_estoque": componente_obj.estoque,
-            "faltando": max(faltando, 0),
-            "tipo": componente_obj.tipo  # 👈 NOVO CAMPO
+    for bom in boms:
+        total = qtd_produto_op * bom.quantidade
+        comp = bom.componente
+        comp_id = comp.id
+
+        if comp_id not in resultado:
+            resultado[comp_id] = {
+                "codigo_componente": comp.codigo,
+                "nome_componente": comp.nome,
+                "total_necessario": 0,
+                "em_estoque": comp.estoque,
+                "faltando": 0,
+                "detalhes": []
+            }
+
+        resultado[comp_id]["total_necessario"] += total
+        resultado[comp_id]["faltando"] = max(
+            0,
+            resultado[comp_id]["total_necessario"] - resultado[comp_id]["em_estoque"]
+        )
+
+        resultado[comp_id]["detalhes"].append({
+            "ordem_producao": str(ordem_id),
+            "produto_final": produto_final_nome,
+            "qtd_produto": qtd_produto_op,
+            "qtd_componente_por_unidade": bom.quantidade,
+            "qtd_necessaria": total
         })
 
-    return Response(resultado)
+        # RECURSIVIDADE
+        adicionar_detalhes_recursivo(comp, total, ordem_id, produto_final_nome, resultado, nivel + 1)
+
+class ImportarBOMView(APIView):
+    parser_classes = [MultiPartParser]
+
+    def post(self, request, format=None):
+        excel_file = request.FILES.get("file")
+        if not excel_file:
+            return Response({"error": "Nenhum arquivo enviado."}, status=400)
+
+        df = pd.read_excel(excel_file)
+        df = df.fillna("")
+
+        pilha = {}
+
+        for _, row in df.iterrows():
+            nivel = int(row["NÍVEL BOM"])
+            cod_componente = row["Código do Componente"]
+            nome_componente = row["Descrição do Componente"]
+            tipo = row["Tipo"]
+            unidade = row["Unidade"]
+            qtd = row["Quantidade"]
+
+            componente, _ = Produto.objects.get_or_create(
+                codigo=cod_componente,
+                defaults={"nome": nome_componente, "tipo": tipo, "unidade": unidade}
+            )
+            componente.nome = nome_componente
+            componente.tipo = tipo
+            componente.unidade = unidade
+            componente.save()
+
+            pilha[nivel] = componente
+
+            if nivel > 1:
+                pai = pilha[nivel - 1]
+                BOM.objects.update_or_create(
+                    produto_pai=pai,
+                    componente=componente,
+                    defaults={"quantidade": qtd, "nivel": nivel}
+                )
+
+        return Response({"message": "Importação realizada com sucesso."}, status=status.HTTP_200_OK)
+
+class ImportarBOMFuncional(APIView):
+    parser_classes = [MultiPartParser]
+
+    def post(self, request):
+        from .models import Fabricante  # certifique-se de importar
+
+        excel_file = request.FILES.get("file")
+        if not excel_file:
+            return Response({"error": "Arquivo não enviado."}, status=400)
+
+        df = pd.read_excel(excel_file)
+        df.columns = df.columns.str.strip()
+
+        for _, row in df.iterrows():
+            try:
+                sistema = row["SISTEMA"]
+                conjunto = row["CONJUNTO"]
+                subconjunto = row["SUB-CONJUNTO"]
+                item = row["ITEM"]
+                componente_nome = row["COMPONENTES"]
+                fabricante_nome = row.get("FABRICANTE", "").strip()
+                codigo_fabricante = row.get("CODIGO FABRICANTE", "").strip()
+                cod_gmao = row.get("CODIGO GMAO", "")
+                quantidade = row.get("QUANT. P/ 1 TREM", 1)
+                unidade = row.get("UNIDADE", "")
+                serie = row.get("SÉRIE", "")
+                comentario = row.get("COMENTARIOS", "")
+                ponderacao = row.get("PONDERAÇÃO OPERAÇÃO", "")
+
+                # Criação dos níveis hierárquicos como produtos
+                sistema_obj, _ = Produto.objects.get_or_create(
+                    nome=sistema, tipo="Sistema"
+                )
+                conjunto_obj, _ = Produto.objects.get_or_create(
+                    nome=conjunto, tipo="Conjunto"
+                )
+                subconjunto_obj, _ = Produto.objects.get_or_create(
+                    nome=subconjunto, tipo="Subconjunto"
+                )
+                item_obj, _ = Produto.objects.get_or_create(
+                    nome=item, tipo="Item"
+                )
+
+                # Criação ou atualização do Fabricante
+                fabricante_obj = None
+                if fabricante_nome:
+                    fabricante_obj, _ = Fabricante.objects.get_or_create(
+                        nome=fabricante_nome,
+                        defaults={"codigo": codigo_fabricante}
+                    )
+                    if not fabricante_obj.codigo and codigo_fabricante:
+                        fabricante_obj.codigo = codigo_fabricante
+                        fabricante_obj.save()
+
+                # Criação do componente
+                componente_obj, _ = Produto.objects.get_or_create(
+                    nome=componente_nome,
+                    tipo="Componente",
+                    defaults={
+                        "codigo_gmao": cod_gmao,
+                        "unidade": unidade,
+                        "serie": serie,
+                        "fabricante": fabricante_obj
+                    },
+                )
+
+                # Atualização de dados caso já existam
+                componente_obj.codigo_gmao = cod_gmao
+                componente_obj.unidade = unidade
+                componente_obj.serie = serie
+                componente_obj.fabricante = fabricante_obj
+                componente_obj.save()
+
+                # Registro na tabela BOM (Item → Componente)
+                BOM.objects.update_or_create(
+                    produto_pai=item_obj,
+                    componente=componente_obj,
+                    defaults={
+                        "quantidade": quantidade,
+                        "comentario": comentario,
+                        "ponderacao": ponderacao,
+                    },
+                )
+            except Exception as e:
+                print(f"Erro ao processar linha: {row}\n{e}")
+                continue  # ignora erro e segue com a próxima linha
+
+        return Response({"message": "Importação funcional concluída com sucesso!"}, status=200)

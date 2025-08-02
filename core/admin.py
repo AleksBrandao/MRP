@@ -3,10 +3,13 @@ from simple_history.admin import SimpleHistoryAdmin
 from .models import Produto, BOM, OrdemProducao
 
 @admin.register(Produto)
-class ProdutoAdmin(SimpleHistoryAdmin):  # herda do SimpleHistoryAdmin
-    list_display = ('codigo', 'nome', 'estoque', 'lead_time', 'tipo')
-    search_fields = ('codigo', 'nome')
-    list_filter = ('lead_time','tipo',)
+class ProdutoAdmin(admin.ModelAdmin):
+    list_display = ('id', 'nome', 'tipo', 'get_fabricante')
+
+    def get_fabricante(self, obj):
+        return obj.fabricante.nome if obj.fabricante else "-"
+    get_fabricante.short_description = 'Fabricante'
+
 
 @admin.register(BOM)
 class BOMAdmin(admin.ModelAdmin):

@@ -95,7 +95,7 @@ export default function MrpResultado() {
           </div>
         </td>
         <td className="border px-4 py-2">{item.necessario}</td>
-        <td className="border px-4 py-2">{item.em_estoque}</td>
+        {/* <td className="border px-4 py-2">{item.em_estoque}</td> */}
         <td className="border px-4 py-2 text-red-600">{item.faltando}</td>
         <td className="border px-4 py-2">{item.lead_time}</td>
         <td className="border px-4 py-2">
