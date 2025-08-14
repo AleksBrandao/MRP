@@ -52,6 +52,7 @@ def calcular_necessidades(produto, quantidade, necessidades, nivel=0, codigo_pai
 
         calcular_necessidades(item.componente, necessidade_total, necessidades, nivel + 1, item.produto_pai.codigo)
 
+
 # 🔁 função reutilizável para MRP
 def calcular_mrp_recursivo():
     necessidades = {}
@@ -94,53 +95,7 @@ def exportar_mrp_csv(request):
 
     return response
 
-@api_view(['GET'])
-def exportar_mrp_excel(request):
-    resultado = calcular_mrp_recursivo()
-
-    # Calcular menor data de entrega das ordens para estimar data_compra
-    ordens = OrdemProducao.objects.all()
-    if ordens.exists():
-        menor_data_entrega = min(ordem.data_entrega for ordem in ordens)
-    else:
-        menor_data_entrega = date.today()
-
-    for item in resultado:
-        lead = item.get("lead_time", 0)
-        item["data_compra"] = (menor_data_entrega - timedelta(days=lead)).isoformat()
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "MRP Resultado"
-
-    headers = [
-        "Código", "Nome", "Necessário", "Em Estoque", "Faltando",
-        "Lead Time", "Data de Compra", "Nível", "Código Pai"
-    ]
-    ws.append(headers)
-
-    for item in resultado:
-        ws.append([
-            item.get("codigo", ""),
-            item.get("nome", ""),
-            item.get("necessario", ""),
-            item.get("em_estoque", ""),
-            item.get("faltando", ""),
-            item.get("lead_time", ""),
-            item.get("data_compra", ""),
-            item.get("nivel", ""),
-            item.get("codigo_pai", ""),
-        ])
-
-    for i in range(1, len(headers) + 1):
-        ws.column_dimensions[get_column_letter(i)].width = 18
-
-    response = HttpResponse(
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-    response["Content-Disposition"] = "attachment; filename=resultado_mrp_completo.xlsx"
-    wb.save(response)
-    return response
+exportar_mrp_excel
 
 @api_view(["GET"])
 def historico_produto(request, produto_id):
@@ -185,40 +140,52 @@ def historico_todos_os_produtos(request):
 
 @api_view(['GET'])
 def mrp_detalhado(request):
-    resultado = []
+    resultado = {}
+    ordens = OrdemProducao.objects.all()
 
-    componentes = BOM.objects.values_list('componente', flat=True).distinct()
+    for ordem in ordens:
+        adicionar_detalhes_recursivo(
+            produto=ordem.produto,
+            qtd_produto_op=ordem.quantidade,
+            ordem_id=ordem.id,
+            produto_final_nome=ordem.produto.nome,
+            resultado=resultado
+        )
 
-    for componente_id in componentes:
-        componente_obj = Produto.objects.get(id=componente_id)
-        bom_entries = BOM.objects.filter(componente_id=componente_id)
-        total_necessario = 0
-        detalhes = []
-
-        for bom in bom_entries:
-            ordens = OrdemProducao.objects.filter(produto=bom.produto_pai)
-            for op in ordens:
-                qtd = op.quantidade * bom.quantidade
-                total_necessario += qtd
-                detalhes.append({
-                    "ordem_producao": op.id,
-                    "produto_final": bom.produto_pai.nome,
-                    "qtd_produto": op.quantidade,
-                    "qtd_componente_por_unidade": bom.quantidade,
-                    "qtd_necessaria": qtd
-                })
+    return Response(list(resultado.values()))
 
 
-        faltando = total_necessario - componente_obj.estoque
+def adicionar_detalhes_recursivo(produto, qtd_produto_op, ordem_id, produto_final_nome, resultado, nivel=0):
+    boms = BOM.objects.filter(produto_pai=produto)
 
-        resultado.append({
-            "codigo_componente": componente_obj.codigo,
-            "nome_componente": componente_obj.nome,
-            "detalhes": detalhes,
-            "total_necessario": total_necessario,
-            "em_estoque": componente_obj.estoque,
-            "faltando": max(faltando, 0),
-            "tipo": componente_obj.tipo  # 👈 NOVO CAMPO
+    for bom in boms:
+        total = qtd_produto_op * bom.quantidade
+        comp = bom.componente
+        comp_id = comp.id
+
+        if comp_id not in resultado:
+            resultado[comp_id] = {
+                "codigo_componente": comp.codigo,
+                "nome_componente": comp.nome,
+                "total_necessario": 0,
+                "em_estoque": comp.estoque,
+                "faltando": 0,
+                "detalhes": []
+            }
+
+        resultado[comp_id]["total_necessario"] += total
+        resultado[comp_id]["faltando"] = max(
+            0,
+            resultado[comp_id]["total_necessario"] - resultado[comp_id]["em_estoque"]
+        )
+
+        resultado[comp_id]["detalhes"].append({
+            "ordem_producao": str(ordem_id),
+            "produto_final": produto_final_nome,
+            "qtd_produto": qtd_produto_op,
+            "qtd_componente_por_unidade": bom.quantidade,
+            "qtd_necessaria": total
         })
 
-    return Response(resultado)
+        # RECURSIVIDADE
+        adicionar_detalhes_recursivo(comp, total, ordem_id, produto_final_nome, resultado, nivel + 1)
