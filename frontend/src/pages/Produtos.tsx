@@ -9,6 +9,9 @@ interface Produto {
   estoque: number;
   lead_time: number;
   tipo: string;
+  fabricante?: string | null;
+  codigo_fabricante?: string | null;
+  unidade?: string | null;
 }
 
 const getTipoLabel = (tipo: string) => {
@@ -32,6 +35,9 @@ export default function Produtos() {
     estoque: 0,
     lead_time: 0,
     tipo: "produto",
+    fabricante: "",
+    codigo_fabricante: "",
+    unidade: "",
   });
   const [editId, setEditId] = useState<number | null>(null);
   const [filtroTipo, setFiltroTipo] = useState<string>("");
@@ -41,50 +47,69 @@ export default function Produtos() {
   }, []);
 
   const carregarProdutos = () => {
-    api.get("/produtos/")
+    api
+      .get("/produtos/")
       .then((res) => setProdutos(res.data))
       .catch((err) => console.error("Erro ao carregar produtos:", err));
   };
 
+  const limparForm = () =>
+    setForm({
+      codigo: "",
+      nome: "",
+      estoque: 0,
+      lead_time: 0,
+      tipo: "produto",
+      fabricante: "",
+      codigo_fabricante: "",
+      unidade: "",
+    });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (editId) {
-      api.put(`/produtos/${editId}/`, form)
+      api
+        .put(`/produtos/${editId}/`, form)
         .then(() => {
           setEditId(null);
-          setForm({ codigo: "", nome: "", estoque: 0, lead_time: 0, tipo: "produto" });
+          limparForm();
           carregarProdutos();
         })
         .catch((err) => console.error("Erro ao editar produto:", err));
     } else {
-      api.post("/produtos/", form)
+      api
+        .post("/produtos/", form)
         .then(() => {
-          setForm({ codigo: "", nome: "", estoque: 0, lead_time: 0, tipo: "produto" });
+          limparForm();
           carregarProdutos();
         })
         .catch((err) => console.error("Erro ao adicionar produto:", err));
     }
   };
 
-  const iniciarEdicao = (produto: Produto) => {
-    setEditId(produto.id);
+  const iniciarEdicao = (p: Produto) => {
+    setEditId(p.id);
     setForm({
-      codigo: produto.codigo,
-      nome: produto.nome,
-      estoque: produto.estoque,
-      lead_time: produto.lead_time,
-      tipo: produto.tipo,
+      codigo: p.codigo,
+      nome: p.nome,
+      estoque: p.estoque,
+      lead_time: p.lead_time,
+      tipo: p.tipo,
+      fabricante: p.fabricante ?? "",
+      codigo_fabricante: p.codigo_fabricante ?? "",
+      unidade: p.unidade ?? "",
     });
   };
 
   const cancelarEdicao = () => {
     setEditId(null);
-    setForm({ codigo: "", nome: "", estoque: 0, lead_time: 0, tipo: "produto" });
+    limparForm();
   };
 
   const handleDelete = (id: number) => {
     if (confirm("Deseja excluir este produto?")) {
-      api.delete(`/produtos/${id}/`)
+      api
+        .delete(`/produtos/${id}/`)
         .then(carregarProdutos)
         .catch((err) => console.error("Erro ao excluir produto:", err));
     }
@@ -97,7 +122,7 @@ export default function Produtos() {
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">
-        {editId ? "Editar Produto" : "Cadastro de Produto"}
+        {editId ? "Editar Produto" : "Cadastro de Componentes"}
       </h1>
 
       <form onSubmit={handleSubmit} className="space-y-3 mb-6">
@@ -117,18 +142,48 @@ export default function Produtos() {
           className="border px-3 py-1 w-full"
           required
         />
+
+        {/* Novos campos */}
+        <input
+          type="text"
+          placeholder="Fabricante"
+          value={form.fabricante ?? ""}
+          onChange={(e) => setForm({ ...form, fabricante: e.target.value })}
+          className="border px-3 py-1 w-full"
+        />
+        <input
+          type="text"
+          placeholder="Código do Fabricante"
+          value={form.codigo_fabricante ?? ""}
+          onChange={(e) =>
+            setForm({ ...form, codigo_fabricante: e.target.value })
+          }
+          className="border px-3 py-1 w-full"
+        />
+        <input
+          type="text"
+          placeholder="Unidade (ex: un, kg, m)"
+          value={form.unidade ?? ""}
+          onChange={(e) => setForm({ ...form, unidade: e.target.value })}
+          className="border px-3 py-1 w-full"
+        />
+
         <input
           type="number"
           placeholder="Estoque"
           value={form.estoque}
-          onChange={(e) => setForm({ ...form, estoque: Number(e.target.value) })}
+          onChange={(e) =>
+            setForm({ ...form, estoque: Number(e.target.value) })
+          }
           className="border px-3 py-1 w-full"
         />
         <input
           type="number"
           placeholder="Lead Time (dias)"
           value={form.lead_time}
-          onChange={(e) => setForm({ ...form, lead_time: Number(e.target.value) })}
+          onChange={(e) =>
+            setForm({ ...form, lead_time: Number(e.target.value) })
+          }
           className="border px-3 py-1 w-full"
         />
         <select
@@ -140,8 +195,12 @@ export default function Produtos() {
           <option value="materia_prima">Matéria-Prima</option>
           <option value="lista">Lista Técnica (BOM)</option>
         </select>
+
         <div className="flex gap-2">
-          <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">
+          <button
+            type="submit"
+            className="bg-blue-600 text-white px-4 py-2 rounded"
+          >
             {editId ? "Salvar Alterações" : "Adicionar Produto"}
           </button>
           {editId && (
@@ -156,9 +215,7 @@ export default function Produtos() {
         </div>
       </form>
 
-      {editId && (
-        <HistoricoProduto produtoId={editId} />
-      )}
+      {editId && <HistoricoProduto produtoId={editId} />}
 
       <h2 className="text-xl font-semibold mb-2">Lista de Produtos</h2>
 
@@ -179,12 +236,15 @@ export default function Produtos() {
       <table className="min-w-full border border-gray-300">
         <thead className="bg-gray-100">
           <tr>
-            <th className="border px-4 py-2">Código</th>
-            <th className="border px-4 py-2">Nome</th>
-            <th className="border px-4 py-2">Estoque</th>
-            <th className="border px-4 py-2">Lead Time</th>
-            <th className="border px-4 py-2">Tipo</th>
-            <th className="border px-4 py-2">Ações</th>
+            <th>CODIGO GMAO</th>
+            <th>COMPONENTES</th>
+            <th>Estoque</th>
+            <th>Lead Time</th>
+            <th>Tipo</th>
+            <th>Fabricante</th>
+            <th>Código Fabricante</th>
+            <th>Unidade</th>
+            <th>Ações</th>
           </tr>
         </thead>
         <tbody>
@@ -195,6 +255,11 @@ export default function Produtos() {
               <td className="border px-4 py-2">{p.estoque}</td>
               <td className="border px-4 py-2">{p.lead_time} dias</td>
               <td className="border px-4 py-2">{getTipoLabel(p.tipo)}</td>
+              <td className="border px-4 py-2">{p.fabricante ?? "-"}</td>
+              <td className="border px-4 py-2">
+                {p.codigo_fabricante ?? "-"}
+              </td>
+              <td className="border px-4 py-2">{p.unidade ?? "-"}</td>
               <td className="border px-4 py-2 text-center space-x-2">
                 <button
                   onClick={() => iniciarEdicao(p)}

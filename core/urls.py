@@ -14,7 +14,7 @@ from .views import (
 
 router = DefaultRouter()
 router.register(r'produtos', ProdutoViewSet)
-router.register(r'boms', BOMViewSet)          # padronizei no plural (opcional)
+router.register(r'bom', BOMViewSet)  # 👈 ESSA LINHA PRECISA EXISTIR
 router.register(r'ordens', OrdemProducaoViewSet)
 
 urlpatterns = [

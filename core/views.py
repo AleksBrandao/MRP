@@ -16,7 +16,7 @@ class ProdutoViewSet(viewsets.ModelViewSet):
     serializer_class = ProdutoSerializer
 
 class BOMViewSet(viewsets.ModelViewSet):
-    queryset = BOM.objects.all()
+    queryset = BOM.objects.select_related('produto_pai', 'componente').all()
     serializer_class = BOMSerializer
 
 class OrdemProducaoViewSet(viewsets.ModelViewSet):

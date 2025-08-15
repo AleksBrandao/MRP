@@ -15,8 +15,12 @@ class Produto(models.Model):
     codigo = models.CharField(max_length=20)
     nome = models.CharField(max_length=100)
     estoque = models.IntegerField()
+    fabricante = models.CharField(max_length=100, blank=True, null=True)
+    codigo_fabricante = models.CharField(max_length=50, blank=True, null=True)
+    unidade = models.CharField(max_length=20, blank=True, null=True)
     lead_time = models.IntegerField()
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='produto')  # 👈 novo campo
+    history = HistoricalRecords()
 
     def __str__(self):
         return f'{self.codigo} - {self.nome}'
