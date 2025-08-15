@@ -29,12 +29,14 @@ export default function DetalhesMRP() {
       .catch(err => console.error("Erro ao carregar detalhes do MRP:", err));
   }, []);
 
+  const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-4">Detalhamento do Cálculo MRP</h1>
 
       <button
-        onClick={() => window.open(`${import.meta.env.VITE_API_URL}/exportar-mrp-excel/`, "_blank")}
+        onClick={() => window.open(`${API_BASE}/mrp/excel/`, "_blank", "noopener")}
         className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 mb-4"
       >
         📥 Exportar para Excel

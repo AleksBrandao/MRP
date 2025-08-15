@@ -1,6 +1,6 @@
 from django.contrib import admin
 from simple_history.admin import SimpleHistoryAdmin
-from .models import Produto, BOM, OrdemProducao
+from .models import Produto, BOM, OrdemProducao, ListaTecnica
 
 @admin.register(Produto)
 class ProdutoAdmin(SimpleHistoryAdmin):  # herda do SimpleHistoryAdmin
@@ -18,3 +18,9 @@ class OrdemProducaoAdmin(admin.ModelAdmin):
     list_display = ('produto', 'quantidade', 'data_entrega')
     list_filter = ('data_entrega',)
     search_fields = ('produto__nome',)
+
+@admin.register(ListaTecnica)
+class ListaTecnicaAdmin(admin.ModelAdmin):
+    list_display = ("codigo", "nome", "tipo", "parent")
+    list_filter = ("tipo",)
+    search_fields = ("codigo", "nome")

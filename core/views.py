@@ -1,109 +1,123 @@
+# core/views.py
+from __future__ import annotations
+from typing import Dict, Any
+from rest_framework.decorators import action
 
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from django.http import HttpResponse
 import csv
-from rest_framework import viewsets
-from .models import Produto, BOM, OrdemProducao
-from .serializers import ProdutoSerializer, BOMSerializer, OrdemProducaoSerializer
-import openpyxl
-from openpyxl.utils import get_column_letter
-from datetime import date, timedelta
 from io import BytesIO
 
-class ProdutoViewSet(viewsets.ModelViewSet):
+from django.http import HttpResponse
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import viewsets, filters
+
+from .models import Produto, BOM, OrdemProducao, ListaTecnica
+from .serializers import ProdutoSerializer, BOMSerializer, OrdemProducaoSerializer, ListaTecnicaSerializer
+
+from .utils import (
+    calcular_mrp_recursivo,
+    adicionar_detalhes_recursivo,
+)
+
+# =========================
+# ViewSets (CRUDs principais)
+# =========================
+
+class BaseProdutoViewSet(viewsets.ModelViewSet):
     queryset = Produto.objects.all()
     serializer_class = ProdutoSerializer
 
+
+class ComponentesViewSet(BaseProdutoViewSet):
+    """No banco continua tipo='produto' (exibido como 'Componente' no front)."""
+    def get_queryset(self):
+        return super().get_queryset().filter(tipo="produto")
+
+    def perform_create(self, serializer):
+        serializer.save(tipo="produto")
+
+
+class MateriasPrimasViewSet(BaseProdutoViewSet):
+    def get_queryset(self):
+        return super().get_queryset().filter(tipo="materia_prima")
+
+    def perform_create(self, serializer):
+        serializer.save(tipo="materia_prima")
+
+
 class BOMViewSet(viewsets.ModelViewSet):
-    queryset = BOM.objects.select_related('produto_pai', 'componente').all()
+    queryset = BOM.objects.select_related("produto_pai", "componente").all()
     serializer_class = BOMSerializer
+
+    @action(detail=True, methods=["get"], url_path="tree")
+    def tree(self, request, pk=None):
+        # pk = id do produto raiz (produto_pai)
+        from .models import Produto
+        produto = Produto.objects.get(pk=pk)
+        return Response(_build_bom_tree(produto))
+
+def _build_bom_tree(produto):
+    node = {
+        "id": produto.id,
+        "codigo": produto.codigo,
+        "nome": produto.nome,
+        "children": [],
+    }
+    # incluímos o id da relação (linha da BOM) para deletar pelo nó
+    for rel in BOM.objects.filter(produto_pai=produto).select_related("componente"):
+        node["children"].append({
+            "rel_id": rel.id,
+            **_build_bom_tree(rel.componente)
+        })
+    return node
+
 
 class OrdemProducaoViewSet(viewsets.ModelViewSet):
     queryset = OrdemProducao.objects.all()
     serializer_class = OrdemProducaoSerializer
 
-# Função recursiva com controle de nível e referência ao pai
-def calcular_necessidades(produto, quantidade, necessidades, nivel=0, codigo_pai=None):
-    boms = BOM.objects.filter(produto_pai=produto)
-    for item in boms:
-        print(f"Analisando: {item.componente.nome}, nível {nivel}, pai: {codigo_pai}")
-        necessidade_total = quantidade * item.quantidade
-        estoque_atual = item.componente.estoque
-        necessidade_liquida = max(0, necessidade_total - estoque_atual)
 
-        if item.componente.id not in necessidades:
-            necessidades[item.componente.id] = {
-                'codigo': item.componente.codigo,
-                'nome': item.componente.nome,
-                'necessario': float(necessidade_total),
-                'em_estoque': float(estoque_atual),
-                'faltando': float(necessidade_liquida),
-                'lead_time': item.componente.lead_time,
-                'data_compra': '',  # será calculado abaixo
-                'nivel': nivel,
-                'codigo_pai': codigo_pai,
-            }
-        else:
-            necessidades[item.componente.id]['necessario'] += float(necessidade_total)
-            necessidades[item.componente.id]['faltando'] = max(
-                0,
-                necessidades[item.componente.id]['necessario'] - necessidades[item.componente.id]['em_estoque']
-            )
+# =========================
+# Endpoints MRP e Exportações
+# =========================
 
-        calcular_necessidades(item.componente, necessidade_total, necessidades, nivel + 1, item.produto_pai.codigo)
-
-
-# 🔁 função reutilizável para MRP
-def calcular_mrp_recursivo():
-    necessidades = {}
-    ordens = OrdemProducao.objects.all()
-
-    for ordem in ordens:
-        calcular_necessidades(ordem.produto, ordem.quantidade, necessidades, nivel=0, codigo_pai=None)
-
-    print("✅ Função MRP recursiva executada com sucesso!")
-    print(f"🔢 Total de itens calculados: {len(necessidades)}")
-    
-    resultado = list(necessidades.values())
-    ordens = OrdemProducao.objects.all()
-    if ordens.exists():
-        menor_data_entrega = min(ordem.data_entrega for ordem in ordens)
-    else:
-        menor_data_entrega = date.today()
-
-    for item in resultado:
-        lead = item.get("lead_time", 0)
-        item["data_compra"] = (menor_data_entrega - timedelta(days=lead)).isoformat()
-    return resultado
-    
-
-@api_view(['GET'])
+@api_view(["GET"])
 def executar_mrp(request):
+    """Retorna a lista agregada de necessidades com data de compra estimada."""
     return Response(calcular_mrp_recursivo())
 
-@api_view(['GET'])
+
+@api_view(["GET"])
 def exportar_mrp_csv(request):
-    response = HttpResponse(content_type='text/csv')
-    response['Content-Disposition'] = 'attachment; filename="resultado_mrp.csv"'
+    """Exporta visão agregada simples em CSV (nome, necessário)."""
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="resultado_mrp.csv"'
 
     writer = csv.writer(response)
-    writer.writerow(['Produto', 'Necessidade'])
+    writer.writerow(["Produto", "Necessidade"])
 
-    resultado = calcular_mrp_recursivo()
-    for item in resultado:
-        writer.writerow([item['nome'], item['necessario']])
+    for item in calcular_mrp_recursivo():
+        writer.writerow([item["nome"], item["necessario"]])
 
     return response
 
 
-@api_view(['GET'])
+@api_view(["GET"])
 def exportar_mrp_excel(request):
+    """
+    Exporta a visão detalhada (por OP) em XLSX, com saldo progressivo por componente.
+    Otimizações:
+      - evita N consultas buscando OP por id a cada linha (usa cache local)
+      - ajusta largura de colunas ao final
+    """
     from openpyxl import Workbook
     from openpyxl.utils import get_column_letter
 
-    resultado = {}
-    ordens = OrdemProducao.objects.all()
+    resultado: Dict[int, Dict[str, Any]] = {}
+    ordens = list(OrdemProducao.objects.all())
+
+    # cache de datas para não consultar dentro do loop
+    mapa_datas = {op.id: op.data_entrega for op in ordens}
 
     for ordem in ordens:
         adicionar_detalhes_recursivo(
@@ -111,144 +125,118 @@ def exportar_mrp_excel(request):
             qtd_produto_op=ordem.quantidade,
             ordem_id=ordem.id,
             produto_final_nome=ordem.produto.nome,
-            resultado=resultado
+            resultado=resultado,
         )
 
     wb = Workbook()
     ws = wb.active
     ws.title = "MRP Detalhado"
 
-    # Cabeçalhos
     headers = [
         "OP", "Produto Final", "Qtd OP", "Qtd por Unidade", "Qtd Necessária",
-        "Componente", "Data Necessidade", "Em Estoque", "Faltando", "Saldo Estoque"
+        "Componente", "Data Necessidade", "Em Estoque", "Faltando", "Saldo Estoque",
     ]
     ws.append(headers)
 
     for comp in resultado.values():
-        estoque_disponivel = comp["em_estoque"]
+        estoque_disponivel = float(comp["em_estoque"])
         for d in comp["detalhes"]:
-            faltando = max(0, d["qtd_necessaria"] - estoque_disponivel)
-            saldo = estoque_disponivel - d["qtd_necessaria"]
-            data = OrdemProducao.objects.get(id=int(d["ordem_producao"])).data_entrega.strftime("%d/%m/%Y")
+            qtd_necessaria = float(d["qtd_necessaria"])
+            faltando = max(0.0, qtd_necessaria - estoque_disponivel)
+            saldo = estoque_disponivel - qtd_necessaria
+
+            data = mapa_datas.get(int(d["ordem_producao"]))
+            data_fmt = data.strftime("%d/%m/%Y") if data else ""
 
             ws.append([
                 d["ordem_producao"],
                 d["produto_final"],
                 d["qtd_produto"],
                 d["qtd_componente_por_unidade"],
-                d["qtd_necessaria"],
+                qtd_necessaria,
                 f"{comp['codigo_componente']} - {comp['nome_componente']}",
-                data,
+                data_fmt,
                 estoque_disponivel,
                 faltando,
-                saldo
+                saldo,
             ])
 
-            estoque_disponivel = max(0, saldo)
+            # saldo progressivo por componente
+            estoque_disponivel = max(0.0, saldo)
 
-    # Ajustar largura das colunas
+    # Ajuste de colunas
     for col in ws.columns:
-        max_length = max(len(str(cell.value)) if cell.value else 0 for cell in col)
-        col_letter = get_column_letter(col[0].column)
-        ws.column_dimensions[col_letter].width = max_length + 2
+        max_len = max((len(str(c.value)) if c.value is not None else 0) for c in col)
+        ws.column_dimensions[get_column_letter(col[0].column)].width = max_len + 2
 
-    # Resposta
-    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
     response["Content-Disposition"] = 'attachment; filename="mrp_detalhado.xlsx"'
     wb.save(response)
     return response
 
 
+# =========================
+# Histórico de alterações
+# =========================
+
 @api_view(["GET"])
-def historico_produto(request, produto_id):
+def historico_produto(request, produto_id: int):
     try:
         produto = Produto.objects.get(id=produto_id)
     except Produto.DoesNotExist:
         return Response({"erro": "Produto não encontrado"}, status=404)
 
     historico = produto.history.all().order_by("-history_date")
-
-    data = []
-    for versao in historico:
-        data.append({
-            "estoque": versao.estoque,
-            "data": versao.history_date,
-            "usuario": versao.history_user.username if versao.history_user else "Desconhecido",
-            "tipo": versao.history_type,
-        })
+    data = [{
+        "estoque": v.estoque,
+        "data": v.history_date,
+        "usuario": v.history_user.username if v.history_user else "Desconhecido",
+        "tipo": v.history_type,
+    } for v in historico]
 
     return Response(data)
 
+
 @api_view(["GET"])
 def historico_todos_os_produtos(request):
-    from .models import Produto
-
-    todos = []
-    for produto in Produto.objects.all():
-        for versao in produto.history.all().order_by("-history_date"):
-            todos.append({
-                "produto_id": produto.id,
-                "produto_nome": produto.nome,
-                "estoque": versao.estoque,
-                "usuario": versao.history_user.username if versao.history_user else "Desconhecido",
-                "tipo": versao.history_type,
-                "data": versao.history_date,
+    registros = []
+    for p in Produto.objects.all():
+        for v in p.history.all().order_by("-history_date"):
+            registros.append({
+                "produto_id": p.id,
+                "produto_nome": p.nome,
+                "estoque": v.estoque,
+                "usuario": v.history_user.username if v.history_user else "Desconhecido",
+                "tipo": v.history_type,
+                "data": v.history_date,
             })
-    
-    # Ordenar por data descrescente
-    todos.sort(key=lambda x: x["data"], reverse=True)
 
-    return Response(todos)
+    registros.sort(key=lambda x: x["data"], reverse=True)
+    return Response(registros)
 
-@api_view(['GET'])
+
+# =========================
+# MRP detalhado (JSON)
+# =========================
+
+@api_view(["GET"])
 def mrp_detalhado(request):
-    resultado = {}
-    ordens = OrdemProducao.objects.all()
-
-    for ordem in ordens:
+    resultado: Dict[int, Dict[str, Any]] = {}
+    for ordem in OrdemProducao.objects.all():
         adicionar_detalhes_recursivo(
             produto=ordem.produto,
             qtd_produto_op=ordem.quantidade,
             ordem_id=ordem.id,
             produto_final_nome=ordem.produto.nome,
-            resultado=resultado
+            resultado=resultado,
         )
-
     return Response(list(resultado.values()))
 
-
-def adicionar_detalhes_recursivo(produto, qtd_produto_op, ordem_id, produto_final_nome, resultado, nivel=0):
-    boms = BOM.objects.filter(produto_pai=produto)
-
-    for bom in boms:
-        total = qtd_produto_op * bom.quantidade
-        comp = bom.componente
-        comp_id = comp.id
-
-        if comp_id not in resultado:
-            resultado[comp_id] = {
-                "codigo_componente": comp.codigo,
-                "nome_componente": comp.nome,
-                "total_necessario": 0,
-                "em_estoque": comp.estoque,
-                "faltando": 0,
-                "detalhes": []
-            }
-
-        resultado[comp_id]["total_necessario"] += total
-        resultado[comp_id]["faltando"] = max(
-            0,
-            resultado[comp_id]["total_necessario"] - resultado[comp_id]["em_estoque"]
-        )
-
-        resultado[comp_id]["detalhes"].append({
-            "ordem_producao": str(ordem_id),
-            "produto_final": produto_final_nome,
-            "qtd_produto": qtd_produto_op,
-            "qtd_componente_por_unidade": bom.quantidade,
-            "qtd_necessaria": total
-        })
-
-        # RECURSIVIDADE
-        adicionar_detalhes_recursivo(comp, total, ordem_id, produto_final_nome, resultado, nivel + 1)
+class ListaTecnicaViewSet(viewsets.ModelViewSet):
+    queryset = ListaTecnica.objects.all().order_by("tipo", "codigo")
+    serializer_class = ListaTecnicaSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["codigo", "nome", "tipo"]
+    ordering_fields = ["codigo", "nome", "tipo", "criado_em"]
