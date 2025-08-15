@@ -13,7 +13,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='produto',
             name='tipo',
-            field=models.CharField(choices=[('produto', 'Produto Acabado'), ('materia_prima', 'Matéria-Prima'), ('lista', 'Lista Técnica (BOM)')], default='produto', max_length=20),
+            field=models.CharField(choices=[('produto', 'Componente'), ('materia_prima', 'Matéria-Prima'), ('lista', 'Lista Técnica (BOM)')], default='produto', max_length=20),
         ),
         migrations.AlterField(
             model_name='produto',

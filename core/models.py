@@ -7,7 +7,7 @@ from simple_history.models import HistoricalRecords
 
 class Produto(models.Model):
     TIPO_CHOICES = [
-        ('produto', 'Produto Acabado'),
+        ('produto', 'Componente'),
         ('materia_prima', 'Matéria-Prima'),
         ('lista', 'Lista Técnica (BOM)'),
     ]

@@ -31,7 +31,7 @@ class Migration(migrations.Migration):
                     "tipo",
                     models.CharField(
                         choices=[
-                            ("produto", "Produto Acabado"),
+                            ("produto", "Componente"),
                             ("materia_prima", "Matéria-Prima"),
                             ("lista", "Lista Técnica (BOM)"),
                         ],

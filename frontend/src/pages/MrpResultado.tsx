@@ -21,7 +21,7 @@ interface ResultadoMRPComFilhos extends ResultadoMRP {
 
 function getTipoLabel(tipo: string) {
   switch (tipo) {
-    case "produto": return "Produto Acabado";
+    case "produto": return "Componente";
     case "materia_prima": return "Matéria-Prima";
     case "lista": return "Lista Técnica (BOM)";
     default: return tipo;
@@ -132,7 +132,7 @@ export default function MrpResultado() {
           className="border px-3 py-1"
         >
           <option value="">Todos</option>
-          <option value="produto">Produto Acabado</option>
+          <option value="produto">Componente</option>
           <option value="materia_prima">Matéria-Prima</option>
           <option value="lista">Lista Técnica (BOM)</option>
         </select>
