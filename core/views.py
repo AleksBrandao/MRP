@@ -11,6 +11,15 @@ from openpyxl.utils import get_column_letter
 from datetime import date, timedelta
 from io import BytesIO
 
+
+class ComponenteViewSet(viewsets.ModelViewSet):
+    queryset = Produto.objects.filter(tipo='componente')
+    serializer_class = ProdutoSerializer
+
+class ListaTecnicaViewSet(viewsets.ModelViewSet):
+    queryset = Produto.objects.filter(tipo='lista')
+    serializer_class = ProdutoSerializer
+    
 class ProdutoViewSet(viewsets.ModelViewSet):
     queryset = Produto.objects.all()
     serializer_class = ProdutoSerializer

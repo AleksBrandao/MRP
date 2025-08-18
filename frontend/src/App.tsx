@@ -5,6 +5,7 @@ import Ordens from "./pages/Ordens";
 import BOM from "./pages/BOM";
 import HistoricoGeral from "./pages/HistoricoGeral";
 import DetalhesMRP from "./pages/DetalhesMRP";
+import ListasTecnicas from "./pages/ListasTecnicas";
 
 
 function App() {
@@ -15,6 +16,8 @@ function App() {
           <Link to="/" className="hover:text-blue-600 transition">
             Produtos
           </Link>
+          <Link to="/" className="hover:text-blue-600 transition">Listas Técnicas</Link>
+
           <Link to="/ordens" className="hover:text-blue-600 transition">
             Ordens de Produção
           </Link>
@@ -29,6 +32,7 @@ function App() {
 
         </nav>
         <Routes>
+          <Route path="/listas-tecnicas" element={<ListasTecnicas />} />
           <Route path="/" element={<Produtos />} />
           <Route path="/ordens" element={<Ordens />} />
           <Route path="/bom" element={<BOM />} />

@@ -1,7 +1,11 @@
-import axios from "axios";
+import api from "./http";
 
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL, // ajuste se usar ngrok ou IP da rede local
-});
+export const ComponenteAPI = {
+  list: () => api.get("/componentes/"),
+  create: (data) => api.post("/componentes/", { ...data, tipo: "componente" }),
+};
 
-export default api;
+export const ListaTecnicaAPI = {
+  list: () => api.get("/listas-tecnicas/"),
+  create: (data) => api.post("/listas-tecnicas/", { ...data, tipo: "lista" }),
+};

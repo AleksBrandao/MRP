@@ -10,12 +10,16 @@ from .views import (
     historico_produto,
     historico_todos_os_produtos,
     mrp_detalhado,
+    ComponenteViewSet,
+    ListaTecnicaViewSet,
 )
 
 router = DefaultRouter()
 router.register(r'produtos', ProdutoViewSet)
 router.register(r'bom', BOMViewSet)  # 👈 ESSA LINHA PRECISA EXISTIR
 router.register(r'ordens', OrdemProducaoViewSet)
+router.register(r'componentes', ComponenteViewSet, basename='componente')
+router.register(r'listas-tecnicas', ListaTecnicaViewSet, basename='lista-tecnica')
 
 urlpatterns = [
     path('api/', include(router.urls)),

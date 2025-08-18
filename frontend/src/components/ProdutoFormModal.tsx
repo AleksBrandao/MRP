@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import api from "../services/api";
+import api from "../services/http";
 
 export type Produto = {
   id?: number;

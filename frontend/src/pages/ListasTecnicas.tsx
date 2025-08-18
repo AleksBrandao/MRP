@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { ComponenteAPI } from "../services/api";
-import CadastrarComponente from "../components/CadastrarComponente";
+import { ListaTecnicaAPI } from "../services/api";
+import CadastrarListaTecnica from "../components/CadastrarListaTecnica";
 
 interface Produto {
   id: number;
@@ -22,31 +22,26 @@ const getTipoLabel = (tipo: string) => {
   }
 };
 
-export default function Produtos() {
-  const [produtos, setProdutos] = useState<Produto[]>([]);
-  const [showCadastroComponente, setShowCadastroComponente] = useState(false);
+export default function ListasTecnicas() {
+  const [listas, setListas] = useState<Produto[]>([]);
+  const [showCadastro, setShowCadastro] = useState(false);
 
-const fetchProdutos = () => {
-  ComponenteAPI.list().then((res) => {
-    console.log("🟡 Dados recebidos da API:", res.data); // ADICIONE ISSO
-    setProdutos(res.data);
-  }).catch((err) => {
-    console.error("🔴 Erro ao buscar componentes:", err); // E ISSO
-  });
-};
+  const fetchListas = () => {
+    ListaTecnicaAPI.list().then((res) => setListas(res.data));
+  };
 
   useEffect(() => {
-    fetchProdutos();
+    fetchListas();
   }, []);
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Componentes</h1>
+      <h1 className="text-2xl font-bold mb-4">Listas Técnicas</h1>
       <button
-        onClick={() => setShowCadastroComponente(true)}
+        onClick={() => setShowCadastro(true)}
         className="bg-blue-500 text-white px-4 py-2 rounded mb-4"
       >
-        Novo Componente
+        Nova Lista Técnica
       </button>
 
       <table className="w-full border">
@@ -60,7 +55,7 @@ const fetchProdutos = () => {
           </tr>
         </thead>
         <tbody>
-          {produtos.map((p) => (
+          {listas.map((p) => (
             <tr key={p.id}>
               <td className="border px-2 py-1">{p.codigo}</td>
               <td className="border px-2 py-1">{p.nome}</td>
@@ -72,12 +67,12 @@ const fetchProdutos = () => {
         </tbody>
       </table>
 
-      {showCadastroComponente && (
+      {showCadastro && (
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg w-[600px]">
-            <CadastrarComponente
-              onClose={() => setShowCadastroComponente(false)}
-              onSuccess={fetchProdutos}
+            <CadastrarListaTecnica
+              onClose={() => setShowCadastro(false)}
+              onSuccess={fetchListas}
             />
           </div>
         </div>
