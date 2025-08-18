@@ -33,7 +33,7 @@ export default function BOM() {
   };
 
   const carregarProdutos = () => {
-    api.get("/produtos/")
+    api.get("/componentes/")
       .then((res) => setProdutos(res.data))
       .catch((err) => console.error("Erro ao carregar produtos:", err));
   };

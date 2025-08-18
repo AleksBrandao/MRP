@@ -43,7 +43,8 @@ function App() {
             <Route path="/historico-geral" element={<HistoricoGeral />} />
             <Route path="/mrp-detalhado" element={<DetalhesMRP />} />
             <Route path="/bom" element={<BOMPage />} />
-            {/* <Route path="/lista-tecnica" element={<ListasTecnicaPage />} /> */}
+            <Route path="/lista-tecnica" element={<ListasTecnicasPage />} />
+
 
           </Routes>
         </main>

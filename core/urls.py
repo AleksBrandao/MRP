@@ -22,6 +22,7 @@ router = DefaultRouter()
 router.register(r'componentes', ComponentesViewSet, basename='componentes')
 router.register(r'materias-primas', MateriasPrimasViewSet, basename='materias-primas')
 # router.register(r'listas-tecnicas', BOMViewSet, basename='listas-tecnicas')
+router.register(r'bom', BOMViewSet, basename='bom')  # ✅ ENDPOINT CERTO PARA A BOM
 router.register(r'ordens', OrdemProducaoViewSet, basename='ordens')
 router.register(r"listas-tecnicas", ListaTecnicaViewSet, basename="listas-tecnicas")
 

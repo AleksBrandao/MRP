@@ -30,6 +30,11 @@ class BOM(models.Model):
     quantidade = models.FloatField()
     history = HistoricalRecords()
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["produto_pai", "componente"], name="uniq_pai_componente")
+        ]
+    
     def __str__(self):
         return f"{self.produto_pai} <- {self.quantidade}x {self.componente}"
 

@@ -5,8 +5,26 @@ import { ListasTecnicasAPI, ComponentesAPI } from "../services/api";
 interface ProdutoOption { id: number; codigo: string; nome: string; }
 interface BOMForm { produto_pai: number | ""; componente: number | ""; quantidade: number; }
 
-export function ListasTecnicasPage() {
-  const [boms, setBoms] = useState<any[]>([]);
+type BOMRow = {
+  id: number;
+  produto_pai?: number;
+  componente?: number;
+  quantidade?: number;
+  // campos opcionais que o serializer pode enviar
+  produto_pai_id?: number;
+  componente_id?: number;
+  produto_pai_codigo?: string;
+  produto_pai_nome?: string;
+  componente_codigo?: string;
+  componente_nome?: string;
+  qtd?: number;
+  qty?: number;
+};
+
+const normalize = (data: any) => (Array.isArray(data) ? data : data?.results ?? []);
+
+export default function ListasTecnicasPage() {
+  const [boms, setBoms] = useState<BOMRow[]>([]);
   const [produtos, setProdutos] = useState<ProdutoOption[]>([]);
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
@@ -20,15 +38,22 @@ export function ListasTecnicasPage() {
 
   const load = async () => {
     const [b, comps] = await Promise.all([ListasTecnicasAPI.list(), ComponentesAPI.list()]);
-    setBoms(b.data);
-    setProdutos(comps.data);
+    setBoms(normalize(b.data));
+    setProdutos(normalize(comps.data));
   };
 
   useEffect(() => { load(); }, []);
 
   const onSubmit = async () => {
-    const payload = { ...form, quantidade: Number(form.quantidade) };
-    if (!payload.produto_pai || !payload.componente) return alert("Selecione produto e componente");
+    const payload = {
+      produto_pai: form.produto_pai ? Number(form.produto_pai) : "",
+      componente: form.componente ? Number(form.componente) : "",
+      quantidade: Number(form.quantidade),
+    };
+    if (!payload.produto_pai || !payload.componente) {
+      alert("Selecione produto e componente");
+      return;
+    }
 
     if (editId) await ListasTecnicasAPI.update(editId, payload);
     else await ListasTecnicasAPI.create(payload);
@@ -67,22 +92,38 @@ export function ListasTecnicasPage() {
           </thead>
           <tbody>
             {boms.map((row) => {
-              const pai = mapProduto[row.produto_pai] || row.produto_pai_obj; // caso o serializer traga obj
-              const comp = mapProduto[row.componente] || row.componente_obj;
-              const paiLabel = pai ? `${pai.codigo} — ${pai.nome}` : row.produto_pai;
-              const compLabel = comp ? `${comp.codigo} — ${comp.nome}` : row.componente;
+              // labels vindos do serializer (prioridade)
+              const paiCodigo  = row.produto_pai_codigo ?? mapProduto[row.produto_pai ?? row.produto_pai_id ?? -1]?.codigo;
+              const paiNome    = row.produto_pai_nome   ?? mapProduto[row.produto_pai ?? row.produto_pai_id ?? -1]?.nome;
+              const compCodigo = row.componente_codigo  ?? mapProduto[row.componente ?? row.componente_id ?? -1]?.codigo;
+              const compNome   = row.componente_nome    ?? mapProduto[row.componente ?? row.componente_id ?? -1]?.nome;
+
+              const paiLabel  = (paiCodigo || paiNome)
+                ? `${paiCodigo ?? ""} — ${paiNome ?? ""}`.trim()
+                : String(row.produto_pai ?? row.produto_pai_id ?? "");
+              const compLabel = (compCodigo || compNome)
+                ? `${compCodigo ?? ""} — ${compNome ?? ""}`.trim()
+                : String(row.componente ?? row.componente_id ?? "");
+              const quantidade = row.quantidade ?? row.qtd ?? row.qty ?? "";
+
               return (
                 <tr key={row.id} className="odd:bg-white even:bg-gray-50">
                   <td className="px-3 py-2 border-b">{paiLabel}</td>
                   <td className="px-3 py-2 border-b">{compLabel}</td>
-                  <td className="px-3 py-2 border-b">{row.quantidade}</td>
+                  <td className="px-3 py-2 border-b">{quantidade}</td>
                   <td className="px-3 py-2 border-b">
                     <div className="flex gap-2">
                       <button
                         className="px-3 py-1 rounded-lg border"
                         onClick={() => {
                           setEditId(row.id);
-                          setForm({ produto_pai: row.produto_pai, componente: row.componente, quantidade: row.quantidade });
+                          const produtoPaiId = row.produto_pai ?? row.produto_pai_id ?? "";
+                          const componenteId = row.componente ?? row.componente_id ?? "";
+                          setForm({
+                            produto_pai: produtoPaiId === "" ? "" : Number(produtoPaiId),
+                            componente: componenteId === "" ? "" : Number(componenteId),
+                            quantidade: Number(quantidade || 1),
+                          });
                           setOpen(true);
                         }}
                       >
@@ -96,6 +137,11 @@ export function ListasTecnicasPage() {
                 </tr>
               );
             })}
+            {boms.length === 0 && (
+              <tr>
+                <td className="px-3 py-6 text-gray-500" colSpan={4}>Nenhuma relação cadastrada.</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -161,5 +207,3 @@ export function ListasTecnicasPage() {
     </div>
   );
 }
-
-export default ListasTecnicasPage;

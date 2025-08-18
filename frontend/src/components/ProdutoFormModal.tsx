@@ -59,9 +59,9 @@ export default function ProdutoFormModal({ open, onClose, onSaved, initialData }
       const payload = { ...form } as Produto;
       let resp;
       if (isEditing && initialData?.id) {
-        resp = await api.put(`/produtos/${initialData.id}/`, payload);
+        resp = await api.put(`/componentes/${initialData.id}/`, payload);
       } else {
-        resp = await api.post("/produtos/", payload);
+        resp = await api.post("/componentes/", payload);
       }
       const saved = resp.data as Produto;
       onSaved?.(saved);
