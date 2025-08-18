@@ -29,12 +29,16 @@ export default function CadastrarComponente({ onClose, onSuccess }: { onClose: (
     };
 
     const handleSubmit = () => {
+        console.log("🔎 Dados enviados:", form); // 👈 debug
         ComponenteAPI.create({ ...form, tipo: "componente" }).then(() => {
             alert("Componente cadastrado com sucesso!");
             onSuccess();
             onClose();
+        }).catch((err) => {
+            console.error("❌ Erro ao cadastrar:", err.response?.data || err.message);
         });
     };
+
 
     return (
         <div className="p-4">

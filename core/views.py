@@ -13,7 +13,7 @@ from io import BytesIO
 
 
 class ComponenteViewSet(viewsets.ModelViewSet):
-    queryset = Produto.objects.filter(tipo='componente')
+    queryset = Produto.objects.filter(tipo='Componente')
     serializer_class = ProdutoSerializer
 
 class ListaTecnicaViewSet(viewsets.ModelViewSet):
