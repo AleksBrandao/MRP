@@ -1,30 +1,23 @@
 import { useEffect, useState } from "react";
 import { ListaTecnicaAPI } from "../services/api";
-import CadastrarListaTecnica from "../components/CadastrarListaTecnica";
 
-interface Produto {
+interface ListaTecnica {
   id: number;
   codigo: string;
   nome: string;
   estoque: number;
   lead_time: number;
-  tipo: string;
 }
 
-const getTipoLabel = (tipo: string) => {
-  switch (tipo) {
-    case "componente":
-      return "Componente";
-    case "lista":
-      return "Lista Técnica";
-    default:
-      return tipo;
-  }
-};
-
 export default function ListasTecnicas() {
-  const [listas, setListas] = useState<Produto[]>([]);
-  const [showCadastro, setShowCadastro] = useState(false);
+  const [listas, setListas] = useState<ListaTecnica[]>([]);
+  const [form, setForm] = useState<Omit<ListaTecnica, "id">>({
+    codigo: "",
+    nome: "",
+    estoque: 0,
+    lead_time: 0,
+  });
+  const [editId, setEditId] = useState<number | null>(null);
 
   const fetchListas = () => {
     ListaTecnicaAPI.list().then((res) => setListas(res.data));
@@ -34,14 +27,81 @@ export default function ListasTecnicas() {
     fetchListas();
   }, []);
 
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = () => {
+    const action = editId
+      ? ListaTecnicaAPI.update(editId, form)
+      : ListaTecnicaAPI.create(form);
+
+    action
+      .then(() => {
+        fetchListas();
+        setForm({ codigo: "", nome: "", estoque: 0, lead_time: 0 });
+        setEditId(null);
+      })
+      .catch((err) => {
+        console.error("Erro ao salvar lista técnica:", err.response?.data || err.message);
+      });
+  };
+
+  const handleEdit = (lista: ListaTecnica) => {
+    setForm({
+      codigo: lista.codigo,
+      nome: lista.nome,
+      estoque: lista.estoque,
+      lead_time: lista.lead_time,
+    });
+    setEditId(lista.id);
+  };
+
+  const handleDelete = (id: number) => {
+    if (confirm("Deseja realmente excluir esta lista técnica?")) {
+      ListaTecnicaAPI.remove(id).then(fetchListas);
+    }
+  };
+
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-4">Listas Técnicas</h1>
+
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <input
+          name="codigo"
+          placeholder="Código"
+          value={form.codigo}
+          onChange={handleChange}
+        />
+        <input
+          name="nome"
+          placeholder="Nome"
+          value={form.nome}
+          onChange={handleChange}
+        />
+        <input
+          name="estoque"
+          placeholder="Estoque"
+          type="number"
+          value={form.estoque}
+          onChange={handleChange}
+        />
+        <input
+          name="lead_time"
+          placeholder="Lead Time"
+          type="number"
+          value={form.lead_time}
+          onChange={handleChange}
+        />
+      </div>
+
       <button
-        onClick={() => setShowCadastro(true)}
+        onClick={handleSubmit}
         className="bg-blue-500 text-white px-4 py-2 rounded mb-4"
       >
-        Nova Lista Técnica
+        {editId ? "Atualizar" : "Adicionar"}
       </button>
 
       <table className="w-full border">
@@ -51,32 +111,34 @@ export default function ListasTecnicas() {
             <th className="border px-2 py-1">Nome</th>
             <th className="border px-2 py-1">Estoque</th>
             <th className="border px-2 py-1">Lead Time</th>
-            <th className="border px-2 py-1">Tipo</th>
+            <th className="border px-2 py-1">Ações</th>
           </tr>
         </thead>
         <tbody>
-          {listas.map((p) => (
-            <tr key={p.id}>
-              <td className="border px-2 py-1">{p.codigo}</td>
-              <td className="border px-2 py-1">{p.nome}</td>
-              <td className="border px-2 py-1">{p.estoque}</td>
-              <td className="border px-2 py-1">{p.lead_time}</td>
-              <td className="border px-2 py-1">{getTipoLabel(p.tipo)}</td>
+          {listas.map((lista) => (
+            <tr key={lista.id}>
+              <td className="border px-2 py-1">{lista.codigo}</td>
+              <td className="border px-2 py-1">{lista.nome}</td>
+              <td className="border px-2 py-1">{lista.estoque}</td>
+              <td className="border px-2 py-1">{lista.lead_time}</td>
+              <td className="border px-2 py-1 space-x-2">
+                <button
+                  onClick={() => handleEdit(lista)}
+                  className="text-blue-600"
+                >
+                  Editar
+                </button>
+                <button
+                  onClick={() => handleDelete(lista.id)}
+                  className="text-red-600"
+                >
+                  Excluir
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
-
-      {showCadastro && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-lg w-[600px]">
-            <CadastrarListaTecnica
-              onClose={() => setShowCadastro(false)}
-              onSuccess={fetchListas}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
