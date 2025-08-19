@@ -261,3 +261,12 @@ def adicionar_detalhes_recursivo(produto, qtd_produto_op, ordem_id, produto_fina
 
         # RECURSIVIDADE
         adicionar_detalhes_recursivo(comp, total, ordem_id, produto_final_nome, resultado, nivel + 1)
+
+@api_view(['POST'])
+def criar_lista_tecnica(request):
+    serializer = ListaTecnicaSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    print("❌ Erro no serializer:", serializer.errors)  # 👈 debug no terminal
+    return Response(serializer.errors, status=400)

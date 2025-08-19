@@ -1,5 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from .views import criar_lista_tecnica
 from .views import (
     ProdutoViewSet,
     BOMViewSet,
@@ -23,6 +24,7 @@ router.register(r'listas-tecnicas', ListaTecnicaViewSet, basename='lista-tecnica
 
 urlpatterns = [
     path('api/', include(router.urls)),
+    # path('api/listas-tecnicas/', criar_lista_tecnica),  # sobrescreve o ViewSet, se houver
     path('api/mrp/', executar_mrp),
     path('api/mrp/detalhado/', mrp_detalhado),
 

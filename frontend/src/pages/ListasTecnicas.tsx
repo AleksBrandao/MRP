@@ -6,6 +6,7 @@ interface ListaTecnica {
   codigo: string;
   nome: string;
   tipo: string;
+  observacoes?: string;
 }
 
 export default function ListasTecnicas() {
@@ -14,10 +15,10 @@ export default function ListasTecnicas() {
     codigo: "",
     nome: "",
     tipo: "SISTEMA",
+    observacoes: "",
   });
   const [editId, setEditId] = useState<number | null>(null);
 
-  // Carregar listas do backend
   const carregarListas = async () => {
     const res = await ListaTecnicaAPI.list();
     setListas(res.data);
@@ -27,25 +28,42 @@ export default function ListasTecnicas() {
     carregarListas();
   }, []);
 
-  // Salvar nova lista ou atualizar existente
   const salvar = async () => {
-    if (editId) {
-      await api.put(`/listas-tecnicas/${editId}/`, form);
-    } else {
-      await api.post("/listas-tecnicas/", form);
+    console.log("➡️ Enviando formulário:", form);
+    try {
+      const payload = {
+        codigo: form.codigo,
+        nome: form.nome,
+        tipo: form.tipo,
+        observacoes: form.observacoes || "",
+      };
+
+      if (editId) {
+        await ListaTecnicaAPI.update(editId, payload);
+      } else {
+        await ListaTecnicaAPI.create(payload);
+      }
+
+      setForm({ codigo: "", nome: "", tipo: "SISTEMA", observacoes: "" });
+      setEditId(null);
+      carregarListas();
+    } catch (error: any) {
+      console.error("❌ Erro ao salvar:", error.response?.data || error.message);
     }
-    setForm({ codigo: "", nome: "", tipo: "SISTEMA" });
-    setEditId(null);
-    carregarListas();
   };
 
   const editar = (lista: ListaTecnica) => {
-    setForm({ codigo: lista.codigo, nome: lista.nome, tipo: lista.tipo });
+    setForm({
+      codigo: lista.codigo,
+      nome: lista.nome,
+      tipo: lista.tipo,
+      observacoes: lista.observacoes || "",
+    });
     setEditId(lista.id);
   };
 
   const excluir = async (id: number) => {
-    await api.delete(`/listas-tecnicas/${id}/`);
+    await ListaTecnicaAPI.remove(id);
     carregarListas();
   };
 
@@ -54,20 +72,20 @@ export default function ListasTecnicas() {
       <h2 className="text-2xl font-bold mb-4">Listas Técnicas</h2>
 
       {/* Formulário */}
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex flex-wrap gap-2 items-center">
         <input
           type="text"
           placeholder="Código"
           value={form.codigo}
           onChange={(e) => setForm({ ...form, codigo: e.target.value })}
-          className="border p-2 rounded w-40"
+          className="border p-2 rounded w-32"
         />
         <input
           type="text"
           placeholder="Nome"
           value={form.nome}
           onChange={(e) => setForm({ ...form, nome: e.target.value })}
-          className="border p-2 rounded w-64"
+          className="border p-2 rounded w-48"
         />
         <select
           value={form.tipo}
@@ -80,6 +98,13 @@ export default function ListasTecnicas() {
           <option value="SUBCONJUNTO">Sub-Conjunto</option>
           <option value="ITEM">Item</option>
         </select>
+        <input
+          type="text"
+          placeholder="Observações"
+          value={form.observacoes}
+          onChange={(e) => setForm({ ...form, observacoes: e.target.value })}
+          className="border p-2 rounded w-64"
+        />
         <button
           onClick={salvar}
           className="bg-blue-500 text-white px-4 py-2 rounded"
@@ -95,6 +120,7 @@ export default function ListasTecnicas() {
             <th className="border p-2">Código</th>
             <th className="border p-2">Nome</th>
             <th className="border p-2">Tipo</th>
+            <th className="border p-2">Observações</th>
             <th className="border p-2">Ações</th>
           </tr>
         </thead>
@@ -104,6 +130,7 @@ export default function ListasTecnicas() {
               <td className="border p-2">{l.codigo}</td>
               <td className="border p-2">{l.nome}</td>
               <td className="border p-2">{l.tipo}</td>
+              <td className="border p-2">{l.observacoes}</td>
               <td className="border p-2">
                 <button
                   onClick={() => editar(l)}
