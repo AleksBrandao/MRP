@@ -8,8 +8,8 @@ from .views import (
     executar_mrp,
     exportar_mrp_excel,
     exportar_mrp_csv,            # <- se estiver usando CSV
-    historico_produto,
-    historico_todos_os_produtos,
+    # historico_produto,
+    # historico_todos_os_produtos,
     mrp_detalhado,
     ComponenteViewSet,
     ListaTecnicaViewSet,
@@ -35,7 +35,7 @@ urlpatterns = [
     # CSV (opcional)
     path('api/exportar-mrp-csv/', exportar_mrp_csv),
 
-    # Histórico
-    path('api/historico-produto/<int:produto_id>/', historico_produto),
-    path('api/historico-todos/', historico_todos_os_produtos),
+    # # Histórico
+    # path('api/historico-produto/<int:produto_id>/', historico_produto),
+    # path('api/historico-todos/', historico_todos_os_produtos),
 ]

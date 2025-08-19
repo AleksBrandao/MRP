@@ -1,38 +1,23 @@
 from django.db import models
 from simple_history.models import HistoricalRecords
-
-
-# Create your models here.
-# models.py
-
+  
 class Produto(models.Model):
     TIPO_CHOICES = [
-        ('produto', 'Componente'),
-        ('materia_prima', 'Matéria-Prima'),
-        ('lista', 'Lista Técnica (BOM)'),
+        ("componente", "Componente"),
+        ("materia_prima", "Matéria-Prima"),
     ]
-
-    codigo = models.CharField(max_length=20)
-    nome = models.CharField(max_length=100)
-    estoque = models.IntegerField()
-    fabricante = models.CharField(max_length=100, blank=True, null=True)
-    codigo_fabricante = models.CharField(max_length=50, blank=True, null=True)
-    unidade = models.CharField(max_length=20, blank=True, null=True)
-    lead_time = models.IntegerField()
-    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='produto')  # 👈 novo campo
+    codigo = models.CharField(max_length=50, unique=True)
+    nome = models.CharField(max_length=255)
+    fabricante = models.CharField(max_length=255, blank=True, default="")
+    codigo_fabricante = models.CharField(max_length=255, blank=True, default="")
+    unidade = models.CharField(max_length=20, blank=True, default="")
+    estoque = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    lead_time = models.IntegerField(default=0)
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default="componente")
     history = HistoricalRecords()
 
     def __str__(self):
-        return f'{self.codigo} - {self.nome}'
-
-class BOM(models.Model):
-    produto_pai = models.ForeignKey(Produto, related_name='bom_pai', on_delete=models.CASCADE)
-    componente = models.ForeignKey(Produto, related_name='bom_componente', on_delete=models.CASCADE)
-    quantidade = models.FloatField()
-    history = HistoricalRecords()
-
-    def __str__(self):
-        return f"{self.produto_pai} <- {self.quantidade}x {self.componente}"
+        return f"[{self.codigo}] {self.nome}"
 
 class OrdemProducao(models.Model):
     produto = models.ForeignKey(Produto, on_delete=models.CASCADE)
@@ -43,35 +28,36 @@ class OrdemProducao(models.Model):
     def __str__(self):
         return f"{self.quantidade}x {self.produto} até {self.data_entrega}"
 
-TIPOS_LISTA = [
-    ("SERIE", "Série"),
-    ("SISTEMA", "Sistema"),
-    ("CONJUNTO", "Conjunto"),
-    ("SUBCONJUNTO", "Sub-Conjunto"),
-    ("ITEM", "Item"),
-]
-
-
-TIPOS_LISTA = [
-    ("SERIE", "Série"),
-    ("SISTEMA", "Sistema"),
-    ("CONJUNTO", "Conjunto"),
-    ("SUBCONJUNTO", "Sub-Conjunto"),
-    ("ITEM", "Item"),
-]
 
 class ListaTecnica(models.Model):
+    TIPO_CHOICES = [
+        ("SERIE", "Série"),
+        ("SISTEMA", "Sistema"),
+        ("CONJUNTO", "Conjunto"),
+        ("SUBCONJUNTO", "Subconjunto"),
+        ("ITEM", "Item"),
+    ]
     codigo = models.CharField(max_length=50, unique=True)
-    nome = models.CharField(max_length=200)
-    tipo = models.CharField(max_length=20, choices=TIPOS_LISTA)
-    observacoes = models.TextField(blank=True, null=True)
+    nome = models.CharField(max_length=255)
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default="CONJUNTO")
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="filhos")
+    observacoes = models.TextField(blank=True, default="")
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
+    history = HistoricalRecords()
 
     class Meta:
         ordering = ["codigo"]
-        verbose_name = "Lista Técnica"
-        verbose_name_plural = "Listas Técnicas"
 
     def __str__(self):
-        return f"{self.codigo} - {self.nome}"
+        return f"[{self.codigo}] {self.nome} ({self.tipo})"
+    
+class BOM(models.Model):
+    # ⚠️ Depois da migration, este campo passará a ser ListaTecnica
+    lista_pai = models.ForeignKey(ListaTecnica, on_delete=models.CASCADE, related_name="itens", null=True, blank=True)
+    componente = models.ForeignKey(Produto, on_delete=models.CASCADE, related_name="usos")
+    quantidade = models.DecimalField(max_digits=14, decimal_places=4)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"{self.lista_pai} -> {self.componente} x {self.quantidade}"

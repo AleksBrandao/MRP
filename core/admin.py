@@ -10,12 +10,12 @@ class ProdutoAdmin(SimpleHistoryAdmin):
 
 @admin.register(BOM)
 class BOMAdmin(admin.ModelAdmin):
-    list_display = ("produto_pai", "componente", "quantidade")
+    list_display = ("lista_pai", "componente", "quantidade")
     search_fields = (
-        "produto_pai__codigo", "produto_pai__nome",
+        "lista_pai__codigo", "lista_pai__nome",
         "componente__codigo", "componente__nome",
     )
-    autocomplete_fields = ("produto_pai", "componente")
+    autocomplete_fields = ("lista_pai", "componente")
 
 @admin.register(OrdemProducao)
 class OrdemProducaoAdmin(admin.ModelAdmin):
