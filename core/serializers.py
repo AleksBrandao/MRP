@@ -29,6 +29,26 @@ class OrdemProducaoSerializer(serializers.ModelSerializer):
         fields = ['id', 'produto', 'produto_nome', 'quantidade', 'data_entrega']
 
 class ListaTecnicaSerializer(serializers.ModelSerializer):
+    parent_codigo = serializers.CharField(source="parent.codigo", read_only=True)
+    parent_nome = serializers.CharField(source="parent.nome", read_only=True)
+
     class Meta:
         model = ListaTecnica
-        fields = '__all__'
+        fields = [
+            "id", "codigo", "nome", "tipo", "observacoes",
+            "parent", "parent_codigo", "parent_nome",
+            "criado_em", "atualizado_em",
+        ]
+
+    def validate(self, attrs):
+        parent = attrs.get("parent") if "parent" in attrs else getattr(self.instance, "parent", None)
+        tipo = attrs.get("tipo") if "tipo" in attrs else getattr(self.instance, "tipo", None)
+
+        if parent and tipo:
+            ordem = ["SERIE", "SISTEMA", "CONJUNTO", "SUBCONJUNTO", "ITEM"]
+            if tipo in ordem and parent.tipo in ordem:
+                if ordem.index(tipo) - ordem.index(parent.tipo) != 1:
+                    raise serializers.ValidationError({
+                        "parent": f"O pai de '{tipo}' deve ser do tipo '{ordem[ordem.index(tipo)-1]}'."
+                    })
+        return attrs

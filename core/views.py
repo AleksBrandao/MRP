@@ -3,7 +3,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.http import HttpResponse
 import csv
-from rest_framework import viewsets
+from rest_framework import viewsets, filters
 from .models import Produto, BOM, OrdemProducao, ListaTecnica  
 from .serializers import ProdutoSerializer, BOMSerializer, OrdemProducaoSerializer, ListaTecnicaSerializer
 import openpyxl
@@ -17,8 +17,11 @@ class ComponenteViewSet(viewsets.ModelViewSet):
     serializer_class = ProdutoSerializer
 
 class ListaTecnicaViewSet(viewsets.ModelViewSet):
-    queryset = ListaTecnica.objects.all().order_by('codigo')
+    queryset = ListaTecnica.objects.all()
     serializer_class = ListaTecnicaSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["codigo", "nome", "observacoes"]
+    ordering_fields = ["codigo", "nome", "tipo", "criado_em"]
     
 class ProdutoViewSet(viewsets.ModelViewSet):
     queryset = Produto.objects.all()

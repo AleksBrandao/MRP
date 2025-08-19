@@ -11,7 +11,7 @@ export const ComponenteAPI = {
 
 export const ListaTecnicaAPI = {
   list: () => api.get("/listas-tecnicas/"),
-  create: (data) => api.post("/listas-tecnicas/", { ...data, tipo: "lista" }),
-  update: (id, data) => api.put(`/listas-tecnicas/${id}/`, { ...data, tipo: "lista" }),
-  remove: (id) => api.delete(`/listas-tecnicas/${id}/`),
+  create: (data: any) => api.post("/listas-tecnicas/", data),          // ✅ sem sobrescrever
+  update: (id: number, data: any) => api.put(`/listas-tecnicas/${id}/`, data), // ✅
+  remove: (id: number) => api.delete(`/listas-tecnicas/${id}/`),
 };
