@@ -42,3 +42,36 @@ class OrdemProducao(models.Model):
 
     def __str__(self):
         return f"{self.quantidade}x {self.produto} até {self.data_entrega}"
+
+TIPOS_LISTA = [
+    ("SERIE", "Série"),
+    ("SISTEMA", "Sistema"),
+    ("CONJUNTO", "Conjunto"),
+    ("SUBCONJUNTO", "Sub-Conjunto"),
+    ("ITEM", "Item"),
+]
+
+
+TIPOS_LISTA = [
+    ("SERIE", "Série"),
+    ("SISTEMA", "Sistema"),
+    ("CONJUNTO", "Conjunto"),
+    ("SUBCONJUNTO", "Sub-Conjunto"),
+    ("ITEM", "Item"),
+]
+
+class ListaTecnica(models.Model):
+    codigo = models.CharField(max_length=50, unique=True)
+    nome = models.CharField(max_length=200)
+    tipo = models.CharField(max_length=20, choices=TIPOS_LISTA)
+    observacoes = models.TextField(blank=True, null=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["codigo"]
+        verbose_name = "Lista Técnica"
+        verbose_name_plural = "Listas Técnicas"
+
+    def __str__(self):
+        return f"{self.codigo} - {self.nome}"

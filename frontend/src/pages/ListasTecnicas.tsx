@@ -5,8 +5,7 @@ interface ListaTecnica {
   id: number;
   codigo: string;
   nome: string;
-  estoque: number;
-  lead_time: number;
+  tipo: string;
 }
 
 export default function ListasTecnicas() {
@@ -14,122 +13,106 @@ export default function ListasTecnicas() {
   const [form, setForm] = useState<Omit<ListaTecnica, "id">>({
     codigo: "",
     nome: "",
-    estoque: 0,
-    lead_time: 0,
+    tipo: "SISTEMA",
   });
   const [editId, setEditId] = useState<number | null>(null);
 
-  const fetchListas = () => {
-    ListaTecnicaAPI.list().then((res) => setListas(res.data));
+  // Carregar listas do backend
+  const carregarListas = async () => {
+    const res = await ListaTecnicaAPI.list();
+    setListas(res.data);
   };
 
   useEffect(() => {
-    fetchListas();
+    carregarListas();
   }, []);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
+  // Salvar nova lista ou atualizar existente
+  const salvar = async () => {
+    if (editId) {
+      await api.put(`/listas-tecnicas/${editId}/`, form);
+    } else {
+      await api.post("/listas-tecnicas/", form);
+    }
+    setForm({ codigo: "", nome: "", tipo: "SISTEMA" });
+    setEditId(null);
+    carregarListas();
   };
 
-  const handleSubmit = () => {
-    const action = editId
-      ? ListaTecnicaAPI.update(editId, form)
-      : ListaTecnicaAPI.create(form);
-
-    action
-      .then(() => {
-        fetchListas();
-        setForm({ codigo: "", nome: "", estoque: 0, lead_time: 0 });
-        setEditId(null);
-      })
-      .catch((err) => {
-        console.error("Erro ao salvar lista técnica:", err.response?.data || err.message);
-      });
-  };
-
-  const handleEdit = (lista: ListaTecnica) => {
-    setForm({
-      codigo: lista.codigo,
-      nome: lista.nome,
-      estoque: lista.estoque,
-      lead_time: lista.lead_time,
-    });
+  const editar = (lista: ListaTecnica) => {
+    setForm({ codigo: lista.codigo, nome: lista.nome, tipo: lista.tipo });
     setEditId(lista.id);
   };
 
-  const handleDelete = (id: number) => {
-    if (confirm("Deseja realmente excluir esta lista técnica?")) {
-      ListaTecnicaAPI.remove(id).then(fetchListas);
-    }
+  const excluir = async (id: number) => {
+    await api.delete(`/listas-tecnicas/${id}/`);
+    carregarListas();
   };
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Listas Técnicas</h1>
+    <div className="p-4">
+      <h2 className="text-2xl font-bold mb-4">Listas Técnicas</h2>
 
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      {/* Formulário */}
+      <div className="mb-4 flex gap-2">
         <input
-          name="codigo"
+          type="text"
           placeholder="Código"
           value={form.codigo}
-          onChange={handleChange}
+          onChange={(e) => setForm({ ...form, codigo: e.target.value })}
+          className="border p-2 rounded w-40"
         />
         <input
-          name="nome"
+          type="text"
           placeholder="Nome"
           value={form.nome}
-          onChange={handleChange}
+          onChange={(e) => setForm({ ...form, nome: e.target.value })}
+          className="border p-2 rounded w-64"
         />
-        <input
-          name="estoque"
-          placeholder="Estoque"
-          type="number"
-          value={form.estoque}
-          onChange={handleChange}
-        />
-        <input
-          name="lead_time"
-          placeholder="Lead Time"
-          type="number"
-          value={form.lead_time}
-          onChange={handleChange}
-        />
+        <select
+          value={form.tipo}
+          onChange={(e) => setForm({ ...form, tipo: e.target.value })}
+          className="border p-2 rounded"
+        >
+          <option value="SERIE">Série</option>
+          <option value="SISTEMA">Sistema</option>
+          <option value="CONJUNTO">Conjunto</option>
+          <option value="SUBCONJUNTO">Sub-Conjunto</option>
+          <option value="ITEM">Item</option>
+        </select>
+        <button
+          onClick={salvar}
+          className="bg-blue-500 text-white px-4 py-2 rounded"
+        >
+          {editId ? "Salvar" : "Adicionar"}
+        </button>
       </div>
 
-      <button
-        onClick={handleSubmit}
-        className="bg-blue-500 text-white px-4 py-2 rounded mb-4"
-      >
-        {editId ? "Atualizar" : "Adicionar"}
-      </button>
-
-      <table className="w-full border">
+      {/* Tabela */}
+      <table className="table-auto border-collapse border border-gray-400 w-full">
         <thead>
-          <tr className="bg-gray-100">
-            <th className="border px-2 py-1">Código</th>
-            <th className="border px-2 py-1">Nome</th>
-            <th className="border px-2 py-1">Estoque</th>
-            <th className="border px-2 py-1">Lead Time</th>
-            <th className="border px-2 py-1">Ações</th>
+          <tr className="bg-gray-200">
+            <th className="border p-2">Código</th>
+            <th className="border p-2">Nome</th>
+            <th className="border p-2">Tipo</th>
+            <th className="border p-2">Ações</th>
           </tr>
         </thead>
         <tbody>
-          {listas.map((lista) => (
-            <tr key={lista.id}>
-              <td className="border px-2 py-1">{lista.codigo}</td>
-              <td className="border px-2 py-1">{lista.nome}</td>
-              <td className="border px-2 py-1">{lista.estoque}</td>
-              <td className="border px-2 py-1">{lista.lead_time}</td>
-              <td className="border px-2 py-1 space-x-2">
+          {listas.map((l) => (
+            <tr key={l.id}>
+              <td className="border p-2">{l.codigo}</td>
+              <td className="border p-2">{l.nome}</td>
+              <td className="border p-2">{l.tipo}</td>
+              <td className="border p-2">
                 <button
-                  onClick={() => handleEdit(lista)}
-                  className="text-blue-600"
+                  onClick={() => editar(l)}
+                  className="text-blue-600 mr-2"
                 >
                   Editar
                 </button>
                 <button
-                  onClick={() => handleDelete(lista.id)}
+                  onClick={() => excluir(l.id)}
                   className="text-red-600"
                 >
                   Excluir

@@ -6,31 +6,34 @@ interface Produto {
   id: number;
   codigo: string;
   nome: string;
-  fabricante: string;
-  codigo_fabricante: string;
-  unidade: string;
+  fabricante?: string | null;
+  codigo_fabricante?: string | null;
+  unidade?: string | null;
   estoque: number;
   lead_time: number;
-  tipo: string;
+  tipo: string; // "produto" | "materia_prima" | "lista" ...
 }
 
 export default function Produtos() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editando, setEditando] = useState<Produto | null>(null);
+  const [carregando, setCarregando] = useState<boolean>(false);
 
   const fetchProdutos = async () => {
     try {
+      setCarregando(true);
       const response = await ComponenteAPI.list();
-      console.log("📦 Todos os produtos:", response.data); // 👈 LOG
-      const todos = response.data;
-      const componentes = todos.filter((p: Produto) => p.tipo === "produto"); // ✅ mantém "produto"
+      const todos: Produto[] = response.data ?? [];
+      // Filtra somente os que são efetivamente componentes/produtos
+      const componentes = todos.filter((p) => p.tipo === "produto");
       setProdutos(componentes);
     } catch (error) {
       console.error("Erro ao buscar produtos:", error);
+    } finally {
+      setCarregando(false);
     }
   };
-
 
   useEffect(() => {
     fetchProdutos();
@@ -42,17 +45,16 @@ export default function Produtos() {
   };
 
   const handleExcluir = async (id: number) => {
-    if (confirm("Tem certeza que deseja excluir este componente?")) {
-      try {
-        await ComponenteAPI.remove(id);
-        fetchProdutos(); // atualiza a lista
-      } catch (err) {
-        console.error("Erro ao excluir:", err);
-        alert("Erro ao excluir componente.");
-      }
+    const ok = confirm("Tem certeza que deseja excluir este componente?");
+    if (!ok) return;
+    try {
+      await ComponenteAPI.remove(id);
+      fetchProdutos();
+    } catch (err) {
+      console.error("Erro ao excluir:", err);
+      alert("Erro ao excluir componente.");
     }
   };
-
 
   const getTipoLabel = (tipo: string) => {
     switch (tipo) {
@@ -73,55 +75,76 @@ export default function Produtos() {
         <h1 className="text-2xl font-bold">Produtos (Componentes)</h1>
         <button
           className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-          onClick={() => setShowModal(true)}
+          onClick={() => {
+            setEditando(null);
+            setShowModal(true);
+          }}
         >
           + Novo Componente
         </button>
       </div>
 
-      <table className="w-full table-auto border-collapse">
-        <thead>
-          <tr className="bg-gray-100 text-left">
-            <th className="px-4 py-2">Código</th>
-            <th className="px-4 py-2">Nome</th>
-            <th className="px-4 py-2">Fabricante</th>
-            <th className="px-4 py-2">Código Fab.</th>
-            <th className="px-4 py-2">Unidade</th>
-            <th className="px-4 py-2">Estoque</th>
-            <th className="px-4 py-2">Lead Time</th>
-            <th className="px-4 py-2">Tipo</th> {/* ✅ nova coluna */}
-            <th className="px-4 py-2">Ações</th>
-          </tr>
-        </thead>
-        <tbody>
-          {produtos.map((produto) => (
-            <tr key={produto.id} className="border-b">
-              <td className="px-4 py-2">{produto.codigo}</td>
-              <td className="px-4 py-2">{produto.nome}</td>
-              <td className="px-4 py-2">{produto.fabricante}</td>
-              <td className="px-4 py-2">{produto.codigo_fabricante}</td>
-              <td className="px-4 py-2">{produto.unidade}</td>
-              <td className="px-4 py-2">{produto.estoque}</td>
-              <td className="px-4 py-2">{produto.lead_time}</td>
-              <td className="px-4 py-2">{getTipoLabel(produto.tipo)}</td> {/* ✅ uso aqui */}
-              <td className="px-4 py-2">
-                <button
-                  onClick={() => handleEditar(produto)}
-                  className="text-blue-600 hover:underline mr-2"
-                >
-                  Editar
-                </button>
-                <button
-                  onClick={() => handleExcluir(produto.id)}
-                  className="text-red-600 hover:underline"
-                >
-                  Excluir
-                </button>
-              </td>
+      <div className="overflow-x-auto">
+        <table className="w-full table-auto border-collapse">
+          <thead>
+            <tr className="bg-gray-100 text-left">
+              <th className="px-4 py-2">Código</th>
+              <th className="px-4 py-2">Nome</th>
+              <th className="px-4 py-2">Fabricante</th>
+              <th className="px-4 py-2">Código Fab.</th>
+              <th className="px-4 py-2">Unidade</th>
+              <th className="px-4 py-2">Estoque</th>
+              <th className="px-4 py-2">Lead Time</th>
+              <th className="px-4 py-2">Tipo</th>
+              <th className="px-4 py-2">Ações</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {carregando ? (
+              <tr>
+                <td className="px-4 py-6 text-center text-gray-500" colSpan={9}>
+                  Carregando...
+                </td>
+              </tr>
+            ) : produtos.length === 0 ? (
+              <tr>
+                <td className="px-4 py-6 text-center text-gray-500" colSpan={9}>
+                  Nenhum componente cadastrado
+                </td>
+              </tr>
+            ) : (
+              produtos.map((produto) => (
+                <tr key={produto.id} className="border-b">
+                  <td className="px-4 py-2">{produto.codigo}</td>
+                  <td className="px-4 py-2">{produto.nome}</td>
+                  <td className="px-4 py-2">{produto.fabricante ?? "-"}</td>
+                  <td className="px-4 py-2">
+                    {produto.codigo_fabricante ?? "-"}
+                  </td>
+                  <td className="px-4 py-2">{produto.unidade ?? "-"}</td>
+                  <td className="px-4 py-2">{produto.estoque}</td>
+                  <td className="px-4 py-2">{produto.lead_time}</td>
+                  <td className="px-4 py-2">{getTipoLabel(produto.tipo)}</td>
+                  <td className="px-4 py-2">
+                    <button
+                      onClick={() => handleEditar(produto)}
+                      className="text-blue-600 hover:underline mr-2"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => handleExcluir(produto.id)}
+                      className="text-red-600 hover:underline"
+                    >
+                      Excluir
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
@@ -134,10 +157,10 @@ export default function Produtos() {
               onSuccess={() => {
                 fetchProdutos();
                 setEditando(null);
+                setShowModal(false);
               }}
               initialData={editando}
             />
-
           </div>
         </div>
       )}

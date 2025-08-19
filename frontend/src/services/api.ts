@@ -1,6 +1,7 @@
 // api.ts
 import api from "./http"; // ✅ Essa linha estava faltando!
 
+
 export const ComponenteAPI = {
   list: () => api.get("/produtos/"),
   create: (data) => api.post("/produtos/", { ...data, tipo: "produto" }),

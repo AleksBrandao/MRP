@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Produto, BOM, OrdemProducao
+from .models import Produto, BOM, OrdemProducao, ListaTecnica  
 
 class ProdutoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -27,3 +27,8 @@ class OrdemProducaoSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrdemProducao
         fields = ['id', 'produto', 'produto_nome', 'quantidade', 'data_entrega']
+
+class ListaTecnicaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ListaTecnica
+        fields = '__all__'

@@ -4,8 +4,8 @@ from rest_framework.response import Response
 from django.http import HttpResponse
 import csv
 from rest_framework import viewsets
-from .models import Produto, BOM, OrdemProducao
-from .serializers import ProdutoSerializer, BOMSerializer, OrdemProducaoSerializer
+from .models import Produto, BOM, OrdemProducao, ListaTecnica  
+from .serializers import ProdutoSerializer, BOMSerializer, OrdemProducaoSerializer, ListaTecnicaSerializer
 import openpyxl
 from openpyxl.utils import get_column_letter
 from datetime import date, timedelta
@@ -17,8 +17,8 @@ class ComponenteViewSet(viewsets.ModelViewSet):
     serializer_class = ProdutoSerializer
 
 class ListaTecnicaViewSet(viewsets.ModelViewSet):
-    queryset = Produto.objects.filter(tipo='lista')
-    serializer_class = ProdutoSerializer
+    queryset = ListaTecnica.objects.all().order_by('codigo')
+    serializer_class = ListaTecnicaSerializer
     
 class ProdutoViewSet(viewsets.ModelViewSet):
     queryset = Produto.objects.all()
