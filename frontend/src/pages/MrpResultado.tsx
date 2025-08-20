@@ -21,7 +21,7 @@ interface ResultadoMRPComFilhos extends ResultadoMRP {
 
 function getTipoLabel(tipo: string) {
   switch (tipo) {
-    case "produto": return "Componente";
+    case "componente": return "Componente";
     case "materia_prima": return "Matéria-Prima";
     case "lista": return "Lista Técnica (BOM)";
     default: return tipo;

@@ -1,5 +1,7 @@
 from django.db import models
 from simple_history.models import HistoricalRecords
+from django.core.exceptions import ValidationError
+from django.db.models import Q
   
 class Produto(models.Model):
     TIPO_CHOICES = [
@@ -58,11 +60,23 @@ class OrdemProducao(models.Model):
         return f"{self.quantidade}x {self.lista} até {self.data_entrega}"
       
 class BOM(models.Model):
-    # ⚠️ Depois da migration, este campo passará a ser ListaTecnica
-    lista_pai = models.ForeignKey(ListaTecnica, on_delete=models.CASCADE, related_name="itens", null=True, blank=True)
-    componente = models.ForeignKey(Produto, on_delete=models.CASCADE, related_name="usos")
-    quantidade = models.DecimalField(max_digits=14, decimal_places=4)
-    history = HistoricalRecords()
+    lista_pai = models.ForeignKey(ListaTecnica, on_delete=models.CASCADE, related_name='itens')
+    componente = models.ForeignKey(Produto, null=True, blank=True, on_delete=models.CASCADE, related_name='usos')
+    sublista   = models.ForeignKey(ListaTecnica, null=True, blank=True, on_delete=models.CASCADE, related_name='usos_como_sublista')
+    quantidade = models.DecimalField(max_digits=12, decimal_places=4, default=1)
 
-    def __str__(self):
-        return f"{self.lista_pai} -> {self.componente} x {self.quantidade}"
+    def clean(self):
+        # exatamente um dos dois: componente XOR sublista
+        if bool(self.componente) == bool(self.sublista):
+            raise ValidationError("Informe apenas um: componente OU sublista.")
+        
+        class Meta:
+            constraints = [
+                models.CheckConstraint(
+                    name="bom_xor_componente_sublista",
+                    check=(
+                        (Q(componente__isnull=False) & Q(sublista__isnull=True)) |
+                        (Q(componente__isnull=True)  & Q(sublista__isnull=False))
+                    ),
+                ),
+            ]

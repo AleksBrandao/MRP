@@ -34,3 +34,18 @@ export const OrdemAPI = {
 
   remove: (id: number) => api.delete(`/ordens/${id}/`),
 };
+
+// ===== BOM =====
+export type BOMCreatePayload = {
+  lista_pai: number;
+  componente: number;
+  quantidade: number;
+};
+
+export const BOMAPI = {
+  list: () => api.get("/bom/"),
+  create: (data: BOMCreatePayload) => api.post("/bom/", data),
+  update: (id: number, data: BOMCreatePayload) => api.put(`/bom/${id}/`, data),
+  remove: (id: number) => api.delete(`/bom/${id}/`),
+  tree: (listaId: number) => api.get(`/bom/${listaId}/tree/`),
+};

@@ -1,230 +1,201 @@
-import { useEffect, useState } from "react";
-import api from "../services/http";
+import { useEffect, useMemo, useState } from "react";
+import { BOMAPI, ComponenteAPI, ListaTecnicaAPI } from "../services/api";
 
-/** Tipos vindos do backend */
-interface ListaTecnica {
+// ===== Tipos =====
+export interface ListaTecnica {
   id: number;
   codigo: string;
   nome: string;
-  tipo: "SERIE" | "SISTEMA" | "CONJUNTO" | "SUBCONJUNTO" | "ITEM";
-  parent?: number | null;
-  parent_codigo?: string | null;
-  parent_nome?: string | null;
 }
 
-interface Produto {
+export interface Componente {
   id: number;
-  codigo?: string;
+  codigo: string;
   nome: string;
-  // demais campos existem, mas não são obrigatórios aqui
 }
 
-interface BOMItem {
+export interface BOMItem {
   id: number;
-  lista_pai: number;
-  lista_pai_codigo: string;
-  lista_pai_nome: string;
-  componente: number;
-  componente_codigo: string;
-  componente_nome: string;
-  quantidade: number;
+
+  // Pai da relação (Lista Técnica)
+  lista_pai: number;              // id
+  lista_pai_codigo?: string | null;
+  lista_pai_nome?: string | null;
+
+  // Componente
+  componente: number;             // id
+  componente_codigo?: string | null;
+  componente_nome?: string | null;
+
+  quantidade: number | string;
 }
 
-/** Form enviado ao backend */
-interface BOMForm {
-  lista_pai: number;
-  componente: number;
-  quantidade: number;
-}
+// ===== Helpers =====
+const label = (codigo?: string | null, nome?: string | null) => {
+  const c = (codigo ?? "").trim();
+  const n = (nome ?? "").trim();
+  if (!c && !n) return "—";
+  if (c && n) return `[${c}] ${n}`;
+  return c ? `[${c}]` : n;
+};
 
-export default function BOM() {
-  const [bom, setBOM] = useState<BOMItem[]>([]);
+const fmtQtd = (q: number | string | null | undefined) => {
+  const num = typeof q === "number" ? q : parseFloat(String(q ?? "0"));
+  return Number.isFinite(num)
+    ? num.toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+    : "0,0000";
+};
+
+export default function BOMPage() {
+  // selects
   const [listas, setListas] = useState<ListaTecnica[]>([]);
-  const [produtos, setProdutos] = useState<Produto[]>([]);
-  const [form, setForm] = useState<BOMForm>({ lista_pai: 0, componente: 0, quantidade: 1 });
-  const [editId, setEditId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [componentes, setComponentes] = useState<Componente[]>([]);
+  const [listaSelecionada, setListaSelecionada] = useState<number | "">("");
+  const [componenteSelecionado, setComponenteSelecionado] = useState<number | "">("");
 
-  useEffect(() => {
-    carregarTudo();
-  }, []);
+  // formulário
+  const [quantidade, setQuantidade] = useState<string>("1");
 
-  const carregarTudo = async () => {
-    setLoading(true);
-    try {
-      await Promise.all([carregarBOM(), carregarListas(), carregarProdutos()]);
-    } finally {
-      setLoading(false);
-    }
+  // tabela / itens
+  const [bom, setBom] = useState<BOMItem[]>([]);
+
+  // edição (opcional)
+  const [editando, setEditando] = useState<BOMItem | null>(null);
+
+  // ===== Carregamentos =====
+  const carregarListas = async () => {
+    const { data } = await ListaTecnicaAPI.list();
+    setListas(data);
+  };
+
+  const carregarComponentes = async () => {
+    const { data } = await ComponenteAPI.list();
+    setComponentes(
+      // se a API retorna produtos misturados, filtra só "produto"/componentes se necessário
+      Array.isArray(data) ? data : []
+    );
   };
 
   const carregarBOM = async () => {
-    try {
-      const res = await api.get("/bom/");
-      setBOM(res.data as BOMItem[]);
-    } catch (err) {
-      console.error("Erro ao carregar BOM:", err);
-    }
+    const { data } = await BOMAPI.list();
+    setBom(data);
   };
 
-  const carregarListas = async () => {
-    try {
-      const res = await api.get("/listas-tecnicas/");
-      // Se quiser restringir apenas a ITEM como pai, descomente a linha abaixo:
-      const apenasItens = (res.data as ListaTecnica[]).filter(l => l.tipo === "ITEM");
-      setListas(apenasItens);
-      // setListas(res.data as ListaTecnica[]);
-    } catch (err) {
-      console.error("Erro ao carregar listas técnicas:", err);
-    }
-  };
+  useEffect(() => {
+    carregarListas();
+    carregarComponentes();
+    carregarBOM();
+  }, []);
 
-  const carregarProdutos = async () => {
-    try {
-      const res = await api.get("/produtos/");
-      setProdutos(res.data as Produto[]);
-    } catch (err) {
-      console.error("Erro ao carregar produtos (componentes):", err);
-    }
-  };
+  // ===== Ações =====
+  const handleAdd = async () => {
+    if (!listaSelecionada || !componenteSelecionado) return;
 
-  const resetForm = () => setForm({ lista_pai: 0, componente: 0, quantidade: 1 });
+    const payload = {
+      lista_pai: Number(listaSelecionada),
+      componente: Number(componenteSelecionado),
+      quantidade: parseFloat(quantidade || "0"),
+    };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.lista_pai || !form.componente || !form.quantidade) return;
-
-    try {
-      if (editId) {
-        await api.put(`/bom/${editId}/`, form);
-        setEditId(null);
-      } else {
-        await api.post("/bom/", form);
-      }
-      resetForm();
-      await carregarBOM();
-    } catch (err) {
-      console.error(editId ? "Erro ao editar item da BOM:" : "Erro ao adicionar item à BOM:", err);
-    }
+    await BOMAPI.create(payload);
+    setQuantidade("1");
+    setComponenteSelecionado("");
+    await carregarBOM();
   };
 
   const iniciarEdicao = (item: BOMItem) => {
-    setEditId(item.id);
-    setForm({
-      lista_pai: item.lista_pai,
-      componente: item.componente,
-      quantidade: item.quantidade,
-    });
-  };
-
-  const cancelarEdicao = () => {
-    setEditId(null);
-    resetForm();
+    setEditando(item);
+    setListaSelecionada(item.lista_pai);
+    setComponenteSelecionado(item.componente);
+    setQuantidade(String(item.quantidade ?? "1"));
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Deseja excluir este item da BOM?")) return;
-    try {
-      await api.delete(`/bom/${id}/`);
-      await carregarBOM();
-    } catch (err) {
-      console.error("Erro ao excluir item da BOM:", err);
-    }
+    await BOMAPI.remove(id);
+    await carregarBOM();
   };
 
+  // ===== Render =====
   return (
-    <div className="p-4">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">
-          {editId ? "Editar Estrutura de Produto (BOM)" : "Cadastro de Estrutura de Produto (BOM)"}
-        </h1>
-        {loading && <span className="text-sm text-gray-500">Carregando…</span>}
-      </div>
+    <div className="p-6">
+      <h1 className="text-2xl font-semibold mb-4">Cadastro de Estrutura de Produto (BOM)</h1>
 
-      <form onSubmit={handleSubmit} className="space-y-3 mb-6">
-        {/* Lista Técnica (Pai) */}
+      {/* Formulário */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
         <select
-          value={form.lista_pai}
-          onChange={(e) => setForm({ ...form, lista_pai: Number(e.target.value) })}
-          className="border px-3 py-2 w-full rounded"
-          required
+          className="border rounded px-3 py-2"
+          value={listaSelecionada}
+          onChange={(e) => setListaSelecionada(e.target.value ? Number(e.target.value) : "")}
         >
-          <option value={0}>Selecione a Lista Técnica (Pai)</option>
+          <option value="">Selecione a Lista Técnica (Pai)</option>
           {listas.map((l) => (
             <option key={l.id} value={l.id}>
-              {l.codigo} — {l.nome} ({l.tipo})
+              [{l.codigo}] {l.nome}
             </option>
           ))}
         </select>
 
-        {/* Componente */}
         <select
-          value={form.componente}
-          onChange={(e) => setForm({ ...form, componente: Number(e.target.value) })}
-          className="border px-3 py-2 w-full rounded"
-          required
+          className="border rounded px-3 py-2"
+          value={componenteSelecionado}
+          onChange={(e) => setComponenteSelecionado(e.target.value ? Number(e.target.value) : "")}
         >
-          <option value={0}>Selecione o Componente</option>
-          {produtos.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.codigo ? `[${p.codigo}] ` : ""}{p.nome}
+          <option value="">Selecione o Componente</option>
+          {componentes.map((c) => (
+            <option key={c.id} value={c.id}>
+              [{c.codigo}] {c.nome}
             </option>
           ))}
         </select>
 
-        {/* Quantidade */}
         <input
           type="number"
+          step="any"
+          className="border rounded px-3 py-2"
+          value={quantidade}
+          onChange={(e) => setQuantidade(e.target.value)}
           placeholder="Quantidade"
-          value={form.quantidade}
-          onChange={(e) =>
-            setForm({ ...form, quantidade: e.target.value === "" ? 0 : Number(e.target.value) })
-          }
-          className="border px-3 py-2 w-full rounded"
-          min={0}
-          step={1}
-          required
         />
+      </div>
 
-        <div className="flex gap-2">
-          <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
-            {editId ? "Salvar Alterações" : "Adicionar Componente"}
-          </button>
-          {editId && (
-            <button
-              type="button"
-              onClick={cancelarEdicao}
-              className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded"
-            >
-              Cancelar
-            </button>
-          )}
-        </div>
-      </form>
+      <button
+        onClick={handleAdd}
+        className="bg-blue-600 text-white rounded px-4 py-2 mb-6 hover:bg-blue-700"
+      >
+        {editando ? "Salvar Edição" : "Adicionar Componente"}
+      </button>
 
-      <h2 className="text-xl font-semibold mb-2">Estrutura Atual</h2>
+      {/* Tabela */}
+      <h2 className="text-lg font-semibold mb-2">Estrutura Atual</h2>
       <div className="overflow-x-auto">
-        <table className="min-w-full border border-gray-300">
-          <thead className="bg-gray-100">
-            <tr>
+        <table className="min-w-full border-collapse">
+          <thead>
+            <tr className="bg-gray-50">
               <th className="border px-4 py-2 text-left">Lista Técnica (Pai)</th>
               <th className="border px-4 py-2 text-left">Componente</th>
               <th className="border px-4 py-2 text-right">Quantidade</th>
               <th className="border px-4 py-2 text-center">Ações</th>
             </tr>
           </thead>
+
           <tbody>
+            {bom.length === 0 && (
+              <tr>
+                <td className="border px-4 py-6 text-center text-gray-500" colSpan={4}>
+                  Nenhum item cadastrado na BOM.
+                </td>
+              </tr>
+            )}
+
             {bom.map((item) => (
               <tr key={item.id}>
                 <td className="border px-4 py-2">
-                  {item.lista_pai_codigo ? `[${item.lista_pai_codigo}] ` : ""}
-                  {item.lista_pai_nome}
+                  {label(item.lista_pai_codigo, item.lista_pai_nome)}
                 </td>
                 <td className="border px-4 py-2">
-                  {item.componente_codigo ? `[${item.componente_codigo}] ` : ""}
-                  {item.componente_nome}
+                  {label(item.componente_codigo, item.componente_nome)}
                 </td>
-                <td className="border px-4 py-2 text-right">{item.quantidade}</td>
+                <td className="border px-4 py-2 text-right">{fmtQtd(item.quantidade)}</td>
                 <td className="border px-4 py-2 text-center space-x-2">
                   <button
                     onClick={() => iniciarEdicao(item)}
@@ -241,13 +212,6 @@ export default function BOM() {
                 </td>
               </tr>
             ))}
-            {bom.length === 0 && (
-              <tr>
-                <td className="border px-4 py-6 text-center text-gray-500" colSpan={4}>
-                  Nenhum item cadastrado na BOM.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>

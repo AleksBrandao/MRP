@@ -2,6 +2,9 @@
 from datetime import date, timedelta
 from io import BytesIO
 import csv
+from decimal import Decimal
+from django.db.models import Prefetch
+import logging
 
 from django.http import HttpResponse
 from rest_framework import viewsets, filters, status
@@ -16,6 +19,7 @@ from .serializers import (
     ListaTecnicaSerializer,
 )
 
+logger = logging.getLogger(__name__)
 # =========================
 # ViewSets
 # =========================
@@ -103,6 +107,7 @@ def calcular_necessidades(lista, quantidade, necessidades, nivel=0, codigo_pai=N
                 "data_compra": "",  # será preenchido depois
                 "nivel": nivel,
                 "codigo_pai": codigo_pai,
+                "tipo": comp.tipo,  # 👈 ADICIONE ISTO
             }
         else:
             necessidades[comp.id]["necessario"] += necessidade_total
@@ -114,8 +119,15 @@ def calcular_necessidades(lista, quantidade, necessidades, nivel=0, codigo_pai=N
         # Recursão: se você tiver sub-listas (lista dentro de lista),
         # troque 'comp' por uma ListaTecnica filha. Caso contrário, a recursão para aqui.
         # Exemplo (se usar sub-listas por parent):
-        # for sub_id in ListaTecnica.objects.filter(parent=lista).values_list("id", flat=True):
-        #     calcular_necessidades(ListaTecnica.objects.get(id=sub_id), necessidade_total, necessidades, nivel + 1, lista.codigo)
+        for sub_id in ListaTecnica.objects.filter(parent=lista).values_list("id", flat=True):
+            sub_lista = ListaTecnica.objects.get(id=sub_id)
+            calcular_necessidades(
+                sub_lista,
+                necessidade_total,
+                necessidades,
+                nivel + 1,
+                codigo_pai=lista.codigo,   # 👈 importante para o front mostrar árvore
+            )
 
 
 def calcular_mrp_recursivo():
@@ -142,10 +154,12 @@ def calcular_mrp_recursivo():
     return list(necessidades.values())
 
 
-@api_view(["GET"])
+@api_view(['GET'])
 def executar_mrp(request):
-    return Response(calcular_mrp_recursivo(), status=status.HTTP_200_OK)
-
+    necessidades = {}
+    for op in OrdemProducao.objects.all().select_related('lista'):
+        explodir_lista(op.lista, Decimal(op.quantidade), necessidades, nivel=0, codigo_pai=op.lista.codigo)
+    return Response(list(necessidades.values()))
 
 @api_view(["GET"])
 def exportar_mrp_csv(request):
@@ -242,66 +256,61 @@ def exportar_mrp_excel(request):
 
 @api_view(["GET"])
 def mrp_detalhado(request):
-    resultado = {}
-    ordens = OrdemProducao.objects.all()
+    acumulado = {}
+    vistos = set()
 
-    for ordem in ordens:
-        lista = _resolver_lista_da_ordem(ordem)
-        if not lista:
+    # ajuste conforme sua origem (listas selecionadas, ordens, etc.)
+    # Exemplo: expandir todas as listas técnicas
+    for lista in ListaTecnica.objects.only("id"):
+        adicionar_detalhes_recursivo(lista.id, 1, acumulado, vistos)
+
+    return Response(list(acumulado.values()))
+
+
+# core/views.py
+from django.db.models import Prefetch
+import logging
+
+logger = logging.getLogger(__name__)
+
+def adicionar_detalhes_recursivo(lista_id, multiplicador, acumulado, vistos):
+    """
+    Expande a BOM a partir de uma lista_pai (id), multiplicando as quantidades
+    e acumulando por componente.
+    """
+    # Busca somente relações com componente válido
+    relacoes = (
+        BOM.objects
+        .filter(lista_pai_id=lista_id, componente__isnull=False)
+        .select_related("componente")
+        .only("id", "quantidade",
+              "componente__id", "componente__codigo", "componente__nome",
+              "componente__estoque", "componente__lead_time")
+    )
+
+    for rel in relacoes:
+        comp = rel.componente
+        if comp is None:   # proteção extra (defensivo)
+            logger.warning("BOM id %s sem componente (ignorada).", rel.id)
             continue
-        adicionar_detalhes_recursivo(
-            lista=lista,
-            qtd_lista_op=ordem.quantidade,
-            ordem_id=ordem.id,
-            lista_final_nome=lista.nome,
-            resultado=resultado,
-        )
 
-    return Response(list(resultado.values()), status=status.HTTP_200_OK)
+        qtd_total = (rel.quantidade or 0) * (multiplicador or 1)
+        key = comp.id
 
-
-def adicionar_detalhes_recursivo(
-    lista, qtd_lista_op, ordem_id, lista_final_nome, resultado, nivel=0
-):
-    """
-    Versão 'detalhada' usando lista_pai.
-    """
-    boms = BOM.objects.filter(lista_pai=lista)
-
-    for bom in boms:
-        total = float(qtd_lista_op) * float(bom.quantidade)
-        comp = bom.componente
-        comp_id = comp.id
-
-        if comp_id not in resultado:
-            resultado[comp_id] = {
-                "codigo_componente": comp.codigo,
-                "nome_componente": comp.nome,
-                "total_necessario": 0.0,
-                "em_estoque": float(comp.estoque or 0.0),
-                "faltando": 0.0,
-                "detalhes": [],
+        if key not in acumulado:
+            acumulado[key] = {
+                "produto_id": comp.id,
+                "codigo": getattr(comp, "codigo", ""),
+                "nome": getattr(comp, "nome", ""),
+                "necessario": 0,
+                "estoque": getattr(comp, "estoque", 0),
+                "lead_time": getattr(comp, "lead_time", 0),
             }
+        acumulado[key]["necessario"] += qtd_total
 
-        resultado[comp_id]["total_necessario"] += total
-        resultado[comp_id]["faltando"] = max(
-            0.0,
-            resultado[comp_id]["total_necessario"] - resultado[comp_id]["em_estoque"],
-        )
-
-        resultado[comp_id]["detalhes"].append(
-            {
-                "ordem_producao": str(ordem_id),
-                "produto_final": lista_final_nome,
-                "qtd_produto": qtd_lista_op,
-                "qtd_componente_por_unidade": float(bom.quantidade),
-                "qtd_necessaria": total,
-            }
-        )
-
-        # Se existirem sub-listas (listas-filhas), descomente e propague:
-        # for sub in ListaTecnica.objects.filter(parent=lista):
-        #     adicionar_detalhes_recursivo(sub, total, ordem_id, lista_final_nome, resultado, nivel + 1)
+        # Se este componente também for pai em outra BOM, expande (recursão)
+        if BOM.objects.filter(lista_pai_id=comp.id, componente__isnull=False).exists():
+            adicionar_detalhes_recursivo(comp.id, qtd_total, acumulado, vistos)
 
 
 @api_view(["POST"])
@@ -352,3 +361,32 @@ def historico_todos_os_produtos(request):
             "ultima_data": (h.history_date.isoformat() if h else None),
         })
     return Response(out, status=status.HTTP_200_OK)
+
+def explodir_lista(lista: ListaTecnica, fator: Decimal, necessidades: dict, nivel: int, codigo_pai: str):
+    itens = BOM.objects.filter(lista_pai=lista).select_related('componente', 'sublista')
+    for item in itens:
+        mult = fator * item.quantidade
+
+        if item.componente:
+            comp = item.componente
+            estoque_atual = comp.estoque or 0
+            necessario = Decimal(mult)
+            faltando = max(Decimal(0), necessario - estoque_atual)
+
+            acum = necessidades.setdefault(comp.id, {
+                "codigo": comp.codigo,
+                "nome": comp.nome,
+                "tipo": comp.tipo,  # "componente" ou "materia_prima"
+                "necessario": Decimal(0),
+                "em_estoque": Decimal(0),
+                "faltando": Decimal(0),
+                "lead_time": comp.lead_time,
+                "nivel": nivel,
+                "codigo_pai": codigo_pai,
+            })
+            acum["necessario"] += necessario
+            acum["em_estoque"] = estoque_atual  # pode somar se quiser considerar múltiplas linhas
+            acum["faltando"] = max(Decimal(0), acum["necessario"] - estoque_atual)
+
+        elif item.sublista:
+            explodir_lista(item.sublista, mult, necessidades, nivel + 1, codigo_pai=lista.codigo)
