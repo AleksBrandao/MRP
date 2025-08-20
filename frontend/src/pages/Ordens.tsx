@@ -1,28 +1,30 @@
 import { useEffect, useState } from "react";
 import api from "../services/http";
 
-interface Produto {
+interface ListaTecnica {
   id: number;
+  codigo: string;
   nome: string;
 }
 
 interface OrdemProducao {
   id: number;
-  produto: number;
-  produto_nome: string;
+  lista: number;
+  lista_nome: string;
+  lista_codigo: string;
   quantidade: number;
-  data_entrega: string;
+  data_entrega: string; // formato YYYY-MM-DD
 }
 
 export default function Ordens() {
   const [ordens, setOrdens] = useState<OrdemProducao[]>([]);
-  const [produtos, setProdutos] = useState<Produto[]>([]);
-  const [form, setForm] = useState({ produto: 0, quantidade: 1, data_entrega: "" });
+  const [listas, setListas] = useState<ListaTecnica[]>([]);
+  const [form, setForm] = useState({ lista: 0, quantidade: 1, data_entrega: "" });
   const [editId, setEditId] = useState<number | null>(null);
 
   useEffect(() => {
     carregarOrdens();
-    carregarProdutos();
+    carregarListas();
   }, []);
 
   const carregarOrdens = () => {
@@ -31,10 +33,10 @@ export default function Ordens() {
       .catch((err) => console.error("Erro ao carregar ordens:", err));
   };
 
-  const carregarProdutos = () => {
-    api.get("/produtos/")
-      .then((res) => setProdutos(res.data))
-      .catch((err) => console.error("Erro ao carregar produtos:", err));
+  const carregarListas = () => {
+    api.get("/listas-tecnicas/")
+      .then((res) => setListas(res.data))
+      .catch((err) => console.error("Erro ao carregar listas:", err));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -43,14 +45,14 @@ export default function Ordens() {
       api.put(`/ordens/${editId}/`, form)
         .then(() => {
           setEditId(null);
-          setForm({ produto: 0, quantidade: 1, data_entrega: "" });
+          setForm({ lista: 0, quantidade: 1, data_entrega: "" });
           carregarOrdens();
         })
         .catch((err) => console.error("Erro ao editar ordem:", err));
     } else {
       api.post("/ordens/", form)
         .then(() => {
-          setForm({ produto: 0, quantidade: 1, data_entrega: "" });
+          setForm({ lista: 0, quantidade: 1, data_entrega: "" });
           carregarOrdens();
         })
         .catch((err) => console.error("Erro ao adicionar ordem:", err));
@@ -60,7 +62,7 @@ export default function Ordens() {
   const iniciarEdicao = (ordem: OrdemProducao) => {
     setEditId(ordem.id);
     setForm({
-      produto: ordem.produto,
+      lista: ordem.lista,
       quantidade: ordem.quantidade,
       data_entrega: ordem.data_entrega,
     });
@@ -68,7 +70,7 @@ export default function Ordens() {
 
   const cancelarEdicao = () => {
     setEditId(null);
-    setForm({ produto: 0, quantidade: 1, data_entrega: "" });
+    setForm({ lista: 0, quantidade: 1, data_entrega: "" });
   };
 
   const handleDelete = (id: number) => {
@@ -87,15 +89,15 @@ export default function Ordens() {
 
       <form onSubmit={handleSubmit} className="space-y-3 mb-6">
         <select
-          value={form.produto}
-          onChange={(e) => setForm({ ...form, produto: Number(e.target.value) })}
+          value={form.lista}
+          onChange={(e) => setForm({ ...form, lista: Number(e.target.value) })}
           className="border px-3 py-1 w-full"
           required
         >
-          <option value={0}>Selecione um produto</option>
-          {produtos.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.nome}
+          <option value={0}>Selecione uma lista técnica</option>
+          {listas.map((l) => (
+            <option key={l.id} value={l.id}>
+              [{l.codigo}] {l.nome}
             </option>
           ))}
         </select>
@@ -137,7 +139,7 @@ export default function Ordens() {
       <table className="min-w-full border border-gray-300">
         <thead className="bg-gray-100">
           <tr>
-            <th className="border px-4 py-2">Produto</th>
+            <th className="border px-4 py-2">Lista Técnica</th>
             <th className="border px-4 py-2">Quantidade</th>
             <th className="border px-4 py-2">Entrega</th>
             <th className="border px-4 py-2">Ações</th>
@@ -146,10 +148,12 @@ export default function Ordens() {
         <tbody>
           {ordens.map((o) => (
             <tr key={o.id}>
-              <td className="border px-4 py-2">{o.produto_nome}</td>
+              <td className="border px-4 py-2">
+                [{o.lista_codigo}] {o.lista_nome}
+              </td>
               <td className="border px-4 py-2">{o.quantidade}</td>
               <td className="border px-4 py-2">
-                {new Date(o.data_entrega).toLocaleDateString()}
+                {o.data_entrega?.split("-").reverse().join("/")}
               </td>
               <td className="border px-4 py-2 text-center space-x-2">
                 <button

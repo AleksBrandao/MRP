@@ -50,7 +50,7 @@ class ProdutoViewSet(viewsets.ModelViewSet):
 
 
 class BOMViewSet(viewsets.ModelViewSet):
-    queryset = BOM.objects.select_related("lista_pai", "componente")
+    queryset = BOM.objects.select_related("lista_pai", "componente").all()
     serializer_class = BOMSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = [
@@ -63,7 +63,7 @@ class BOMViewSet(viewsets.ModelViewSet):
 
 
 class OrdemProducaoViewSet(viewsets.ModelViewSet):
-    queryset = OrdemProducao.objects.all()
+    queryset = OrdemProducao.objects.all().order_by('-id')
     serializer_class = OrdemProducaoSerializer
 
 
@@ -72,29 +72,8 @@ class OrdemProducaoViewSet(viewsets.ModelViewSet):
 # =========================
 
 def _resolver_lista_da_ordem(ordem):
-    """
-    Compat: se OrdemProducao ainda referencia Produto (legado),
-    tentamos achar a ListaTecnica com o MESMO código.
-    Retorna uma instância de ListaTecnica ou None.
-    """
-    alvo = ordem.produto  # legado: FK para Produto
-    # Novo modelo: se você já migrou o campo para 'lista', basta trocar aqui.
-    # p.ex.: alvo = ordem.lista
-    try:
-        # quando já for ListaTecnica (após migração do modelo da OP)
-        if isinstance(alvo, ListaTecnica):
-            return alvo
-    except Exception:
-        pass
-
-    # Legado: Produto "lista" → procurar ListaTecnica por código
-    codigo = getattr(alvo, "codigo", None)
-    if not codigo:
-        return None
-    try:
-        return ListaTecnica.objects.get(codigo=codigo)
-    except ListaTecnica.DoesNotExist:
-        return None
+    """Agora a OP já referencia diretamente a Lista Técnica."""
+    return ordem.lista
 
 
 # =========================

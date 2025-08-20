@@ -19,9 +19,10 @@ class BOMAdmin(admin.ModelAdmin):
 
 @admin.register(OrdemProducao)
 class OrdemProducaoAdmin(admin.ModelAdmin):
-    list_display = ("produto", "quantidade", "data_entrega")
-    list_filter = ("data_entrega",)
-    search_fields = ("produto__nome",)
+     list_display = ("lista", "quantidade", "data_entrega")
+     search_fields = ("lista__codigo", "lista__nome")
+     autocomplete_fields = ("lista",)
+     date_hierarchy = "data_entrega"
 
 @admin.register(ListaTecnica)   # ⬅️ registrar aqui
 class ListaTecnicaAdmin(admin.ModelAdmin):

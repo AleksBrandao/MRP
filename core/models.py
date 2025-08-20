@@ -19,14 +19,7 @@ class Produto(models.Model):
     def __str__(self):
         return f"[{self.codigo}] {self.nome}"
 
-class OrdemProducao(models.Model):
-    produto = models.ForeignKey(Produto, on_delete=models.CASCADE)
-    quantidade = models.IntegerField()
-    data_entrega = models.DateField()
-    history = HistoricalRecords()
 
-    def __str__(self):
-        return f"{self.quantidade}x {self.produto} até {self.data_entrega}"
 
 
 class ListaTecnica(models.Model):
@@ -51,7 +44,19 @@ class ListaTecnica(models.Model):
 
     def __str__(self):
         return f"[{self.codigo}] {self.nome} ({self.tipo})"
-    
+
+class OrdemProducao(models.Model):
+    lista = models.ForeignKey('ListaTecnica', on_delete=models.CASCADE,
+                              related_name='ordens')  # <- aqui
+    quantidade = models.IntegerField()
+    data_entrega = models.DateField()
+    criado_em = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    atualizado_em = models.DateTimeField(auto_now=True, null=True, blank=True)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"{self.quantidade}x {self.lista} até {self.data_entrega}"
+      
 class BOM(models.Model):
     # ⚠️ Depois da migration, este campo passará a ser ListaTecnica
     lista_pai = models.ForeignKey(ListaTecnica, on_delete=models.CASCADE, related_name="itens", null=True, blank=True)

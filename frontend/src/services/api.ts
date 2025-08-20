@@ -14,3 +14,23 @@ export const ListaTecnicaAPI = {
   update: (id: number, data: any) => api.put(`/listas-tecnicas/${id}/`, data), // ✅
   remove: (id: number) => api.delete(`/listas-tecnicas/${id}/`),
 };
+
+export type OrdemProducao = {
+  id: number;
+  lista: number;           // id da lista técnica
+  lista_nome: string;      // ex.: "8500 (SÉRIE)"
+  lista_codigo: string;    // ex.: "8500"
+  quantidade: number;
+  data_entrega: string;    // 'YYYY-MM-DD'
+};
+
+export const OrdemAPI = {
+  list: () => api.get<OrdemProducao[]>("/ordens/"),
+  create: (data: { lista: number; quantidade: number; data_entrega: string }) =>
+    api.post("/ordens/", data),
+
+  update: (id: number, data: Partial<{ lista: number; quantidade: number; data_entrega: string }>) =>
+    api.put(`/ordens/${id}/`, data),
+
+  remove: (id: number) => api.delete(`/ordens/${id}/`),
+};
