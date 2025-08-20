@@ -26,7 +26,7 @@ export default function Produtos() {
       const response = await ComponenteAPI.list();
       const todos: Produto[] = response.data ?? [];
       // Filtra somente os que são efetivamente componentes/produtos
-      const componentes = todos.filter((p) => p.tipo === "produto");
+      const componentes = todos.filter((p) => p.tipo === "componente");
       setProdutos(componentes);
     } catch (error) {
       console.error("Erro ao buscar produtos:", error);

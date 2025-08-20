@@ -3,10 +3,9 @@ import api from "./http";
 
 export const ComponenteAPI = {
   list: () => api.get("/produtos/"),
-  create: (data: any) => api.post("/produtos/", { ...data, tipo: "produto" }), // 👈 redundante e seguro
-  update: (id: number, data: any) =>
-    api.put(`/produtos/${id}/`, { ...data, tipo: "produto" }),
-  remove: (id: number) => api.delete(`/produtos/${id}/`),
+  create: (data) => api.post("/produtos/", data),            // ← não envia tipo
+  update: (id, data) => api.put(`/produtos/${id}/`, data),   // ← não envia tipo
+  remove: (id) => api.delete(`/produtos/${id}/`),
 };
 
 export const ListaTecnicaAPI = {
