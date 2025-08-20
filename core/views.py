@@ -332,3 +332,44 @@ def criar_lista_tecnica(request):
         serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+def historico_produto(request, produto_id: int):
+    # Histórico detalhado de um produto/componente específico
+    try:
+        p = Produto.objects.get(id=produto_id)
+    except Produto.DoesNotExist:
+        return Response({"detail": "Produto não encontrado"}, status=status.HTTP_404_NOT_FOUND)
+
+    registros = []
+    # Requer simple_history (já presente no model)
+    for h in p.history.order_by("-history_date"):
+        registros.append({
+            "data": h.history_date.isoformat(),
+            "usuario": getattr(h.history_user, "username", None),
+            "acao": {"+": "Criado", "~": "Alterado", "-": "Excluído"}.get(h.history_type, h.history_type),
+            "codigo": h.codigo,
+            "nome": h.nome,
+            "fabricante": h.fabricante,
+            "codigo_fabricante": h.codigo_fabricante,
+            "unidade": h.unidade,
+            "estoque": float(h.estoque or 0),
+            "lead_time": int(h.lead_time or 0),
+            "tipo": h.tipo,
+        })
+    return Response(registros, status=status.HTTP_200_OK)
+
+@api_view(["GET"])
+def historico_todos_os_produtos(request):
+    # Última alteração por produto (visão geral)
+    out = []
+    for p in Produto.objects.all().order_by("codigo"):
+        h = p.history.order_by("-history_date").first()
+        out.append({
+            "id": p.id,
+            "codigo": p.codigo,
+            "nome": p.nome,
+            "ultima_acao": ({"+" : "Criado","~":"Alterado","-":"Excluído"}.get(h.history_type, h.history_type) if h else None),
+            "ultima_data": (h.history_date.isoformat() if h else None),
+        })
+    return Response(out, status=status.HTTP_200_OK)

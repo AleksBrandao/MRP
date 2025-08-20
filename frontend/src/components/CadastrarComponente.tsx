@@ -9,7 +9,7 @@ interface FormData {
   unidade: string;
   estoque: number;
   lead_time: number;
-  tipo: string;
+  tipo: "produto";  
   id?: number; // opcional, usado na edição
 }
 
@@ -31,7 +31,7 @@ export default function CadastrarComponente({
       unidade: "un",
       estoque: 0,
       lead_time: 0,
-      tipo: "produto",
+      tipo: "componente",
     };
   });
 

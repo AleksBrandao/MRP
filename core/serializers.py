@@ -2,9 +2,20 @@ from rest_framework import serializers
 from .models import Produto, BOM, OrdemProducao, ListaTecnica  
 
 class ProdutoSerializer(serializers.ModelSerializer):
+    # Torna tipo opcional e com default
+    tipo = serializers.ChoiceField(
+        choices=getattr(Produto, "TIPO_CHOICES", None),
+        required=False,
+        default="produto"
+    )
+
     class Meta:
         model = Produto
         fields = '__all__'
+
+    def create(self, validated_data):
+        validated_data.setdefault("tipo", "produto")  # 👈 fallback
+        return super().create(validated_data)
 
 class BOMSerializer(serializers.ModelSerializer):
     lista_pai_codigo = serializers.CharField(source="lista_pai.codigo", read_only=True)

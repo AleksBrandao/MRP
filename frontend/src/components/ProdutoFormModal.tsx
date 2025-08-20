@@ -30,7 +30,7 @@ export default function ProdutoFormModal({ open, onClose, onSaved, initialData }
       unidade: "",
       estoque: 0,
       lead_time: 0,
-      tipo: "produto",
+      tipo: "componente", // 🔁 antes estava "produto"
     }),
     []
   );
@@ -52,28 +52,44 @@ export default function ProdutoFormModal({ open, onClose, onSaved, initialData }
   }
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    try {
-      const payload = { ...form } as Produto;
-      let resp;
-      if (isEditing && initialData?.id) {
-        resp = await api.put(`/produtos/${initialData.id}/`, payload);
-      } else {
-        resp = await api.post("/produtos/", payload);
-      }
-      const saved = resp.data as Produto;
-      onSaved?.(saved);
-      onClose();
-    } catch (err: any) {
-      const msg = err?.response?.data ? JSON.stringify(err.response.data) : err?.message || "Erro ao salvar.";
-      setError(msg);
-      console.error("Salvar produto:", err);
-    } finally {
-      setSubmitting(false);
-    }
+  e.preventDefault();
+  setSubmitting(true);
+  setError(null);
+
+  // normaliza números (evita enviar string acidental)
+  const payload: Produto = {
+    ...form,
+    estoque: Number(form.estoque ?? 0),
+    lead_time: Number(form.lead_time ?? 0),
+  };
+
+  try {
+    const url = isEditing && initialData?.id
+      ? `/produtos/${initialData.id}/`
+      : `/produtos/`; // se quiser isolar componentes, troque para `/componentes/`
+
+    const method = isEditing ? api.put : api.post;
+    const resp = await method(url, payload, {
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const saved = resp.data as Produto;
+    onSaved?.(saved);
+    onClose();
+  } catch (err: any) {
+    // 👇 aqui você vê o que o DRF reclamou (campo inválido, duplicado, etc.)
+    console.log("status:", err?.response?.status);
+    console.log("data:", err?.response?.data);
+    const msg =
+      err?.response?.data
+        ? JSON.stringify(err.response.data)
+        : err?.message || "Erro ao salvar.";
+    setError(msg);
+    console.error("Salvar produto:", err);
+  } finally {
+    setSubmitting(false);
   }
+}
 
   if (!open) return null;
 
@@ -101,13 +117,16 @@ export default function ProdutoFormModal({ open, onClose, onSaved, initialData }
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <label className="flex flex-col gap-1">
-              <span className="text-sm text-gray-600">Código</span>
-              <input
+              <span className="text-sm text-gray-600">Tipo</span>
+              <select
                 className="rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
-                value={form.codigo}
-                onChange={(e) => handleChange("codigo", e.target.value)}
-                required
-              />
+                value={form.tipo}
+                onChange={(e) => handleChange("tipo", e.target.value as Produto["tipo"])}
+              >
+                <option value="componente">Componente</option>
+                <option value="materia_prima">Matéria-Prima</option>
+                <option value="lista">Lista Técnica (BOM)</option>
+              </select>
             </label>
 
             <label className="flex flex-col gap-1">
@@ -177,7 +196,7 @@ export default function ProdutoFormModal({ open, onClose, onSaved, initialData }
               <select
                 className="rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
                 value={form.tipo}
-                onChange={(e) => handleChange("tipo", e.target.value as Produto["tipo"]) }
+                onChange={(e) => handleChange("tipo", e.target.value as Produto["tipo"])}
               >
                 <option value="produto">Componente</option>
                 <option value="materia_prima">Matéria-Prima</option>
