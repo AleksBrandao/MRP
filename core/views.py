@@ -180,20 +180,29 @@ def exportar_mrp_excel(request):
     from openpyxl import Workbook
     from openpyxl.utils import get_column_letter
 
+    print("⚙️ Iniciando exportação MRP detalhado...")
     resultado = {}
     ordens = OrdemProducao.objects.all()
+    print(f"🧾 Total de ordens de produção encontradas: {ordens.count()}")
 
     for ordem in ordens:
         lista = _resolver_lista_da_ordem(ordem)
+        print(f"🔁 Processando OP #{ordem.id} com lista {getattr(lista, 'codigo', '?')}")
+
         if not lista:
+            print(f"⚠️ OP #{ordem.id} não possui lista associada.")
             continue
+
         adicionar_detalhes_recursivo(
-            lista=lista,
-            qtd_lista_op=ordem.quantidade,
+            lista_id=lista.id,
+            multiplicador=ordem.quantidade,
+            acumulado=resultado,
+            vistos=set(),
             ordem_id=ordem.id,
             lista_final_nome=lista.nome,
-            resultado=resultado,
         )
+
+    print(f"📦 Total de componentes encontrados no resultado: {len(resultado)}")
 
     wb = Workbook()
     ws = wb.active
@@ -218,19 +227,23 @@ def exportar_mrp_excel(request):
         for d in comp["detalhes"]:
             faltando = max(0, d["qtd_necessaria"] - estoque_disponivel)
             saldo = estoque_disponivel - d["qtd_necessaria"]
-            data = (
-                OrdemProducao.objects.get(id=int(d["ordem_producao"]))
-                .data_entrega.strftime("%d/%m/%Y")
-            )
+            try:
+                data = (
+                    
+                    OrdemProducao.objects.get(id=int(d.get("ordem_producao")))
+                    .data_entrega.strftime("%d/%m/%Y")
+                )
+            except:
+                data = "—"
 
             ws.append(
                 [
-                    d["ordem_producao"],
-                    d["produto_final"],
-                    d["qtd_produto"],
-                    d["qtd_componente_por_unidade"],
+                    d.get("ordem_producao", "—"),
+                    d["produto_final"] if "produto_final" in d else "—",
+                    d.get("qtd_produto", "—"),
+                    d.get("qtd_componente_por_unidade", "—"),
                     d["qtd_necessaria"],
-                    f"{comp['codigo_componente']} - {comp['nome_componente']}",
+                    f"{comp.get('codigo_componente', '—')} - {comp.get('nome_componente', '—')}",
                     data,
                     estoque_disponivel,
                     faltando,
@@ -240,7 +253,7 @@ def exportar_mrp_excel(request):
 
             estoque_disponivel = max(0, saldo)
 
-    # Largura auto
+    # Largura automática
     for col in ws.columns:
         max_length = max(len(str(cell.value)) if cell.value else 0 for cell in col)
         col_letter = get_column_letter(col[0].column)
@@ -251,6 +264,9 @@ def exportar_mrp_excel(request):
     )
     response["Content-Disposition"] = 'attachment; filename="mrp_detalhado.xlsx"'
     wb.save(response)
+
+    logger.info("✅ Arquivo Excel gerado com sucesso!")
+
     return response
 
 
@@ -271,8 +287,11 @@ def mrp_detalhado(request):
             lista_id=lista.id,
             multiplicador=ordem.quantidade,
             acumulado=resultado,
-            vistos=vistos
+            vistos=set(),
+            ordem_id=ordem.id,
+            lista_final_nome=lista.nome,
         )
+
 
     # Fallback: cria detalhe genérico se houver necessidade sem detalhes
     for item in resultado.values():
@@ -316,54 +335,49 @@ def adicionar_detalhes_recursivo(lista_id, multiplicador, acumulado, vistos, ord
 
     relacoes = (
         BOM.objects
-        .filter(lista_pai_id=lista_id, componente__isnull=False)
-        .select_related("componente")
+        .filter(lista_pai_id=lista_id)
+        .select_related("componente", "sublista")
     )
 
     for rel in relacoes:
         comp = rel.componente
-        if comp is None:
-            continue
-
+        sublista = rel.sublista
         qtd_total = (rel.quantidade or 0) * (multiplicador or 1)
-        key = comp.id
 
-        if key not in acumulado:
-            acumulado[key] = {
-                "produto_id": comp.id,
-                "codigo": getattr(comp, "codigo", ""),
-                "nome": getattr(comp, "nome", ""),
-                "necessario": 0,
-                "estoque": getattr(comp, "estoque", 0),
-                "lead_time": getattr(comp, "lead_time", 0),
-                "detalhes": [],
-            }
+        if comp:
+            key = comp.id
+            if key not in acumulado:
+                acumulado[key] = {
+                    "produto_id": comp.id,
+                    "codigo_componente": getattr(comp, "codigo", ""),
+                    "nome_componente": getattr(comp, "nome", ""),
+                    "necessario": 0,
+                    "em_estoque": getattr(comp, "estoque", 0),
+                    "faltando": 0,
+                    "lead_time": getattr(comp, "lead_time", 0),
+                    "detalhes": [],
+                }
 
-        acumulado[key]["necessario"] += qtd_total
-        acumulado[key]["faltando"] = max(0, acumulado[key]["necessario"] - acumulado[key]["estoque"])
+            acumulado[key]["necessario"] += qtd_total
+            acumulado[key]["faltando"] = max(0, acumulado[key]["necessario"] - acumulado[key]["em_estoque"])
 
-        acumulado[key]["detalhes"].append({
-            "tipo": "op",
-            "descricao": f"Necessário para OP #{ordem_id} do produto {lista_final_nome}",
-            "quantidade": qtd_total,
-            "estoque_considerado": getattr(comp, "estoque", 0),
-            "lead_time": getattr(comp, "lead_time", 0),
-            "data_sugerida": (date.today() + timedelta(days=comp.lead_time)).isoformat(),
-            "origem": "Ordem de Produção",
-            "ordem_id": ordem_id,
-            "lista_id": lista_id,
-        })
+            acumulado[key]["detalhes"].append({
+                "ordem_producao": ordem_id,
+                "produto_final": lista_final_nome,
+                "qtd_produto": multiplicador,
+                "qtd_componente_por_unidade": rel.quantidade,
+                "qtd_necessaria": qtd_total,
+            })
 
-        # Recursão se o componente for usado como pai em uma nova lista
-        if BOM.objects.filter(lista_pai_id=comp.id, componente__isnull=False).exists():
+        elif sublista:
             adicionar_detalhes_recursivo(
-                lista_id=comp.id,
+                lista_id=sublista.id,
                 multiplicador=qtd_total,
                 acumulado=acumulado,
                 vistos=vistos,
                 ordem_id=ordem_id,
                 lista_final_nome=lista_final_nome,
-                nivel=nivel + 1
+                nivel=nivel + 1,
             )
 
 
