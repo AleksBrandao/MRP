@@ -256,15 +256,47 @@ def exportar_mrp_excel(request):
 
 @api_view(["GET"])
 def mrp_detalhado(request):
-    acumulado = {}
-    vistos = set()
+    resultado = {}
+    ordens = OrdemProducao.objects.all()
 
-    # ajuste conforme sua origem (listas selecionadas, ordens, etc.)
-    # Exemplo: expandir todas as listas técnicas
-    for lista in ListaTecnica.objects.only("id"):
-        adicionar_detalhes_recursivo(lista.id, 1, acumulado, vistos)
+    for ordem in ordens:
+        lista = _resolver_lista_da_ordem(ordem)
+        if not lista:
+            continue
 
-    return Response(list(acumulado.values()))
+        # Inicializa estrutura para evitar repetição do mesmo componente
+        vistos = set()
+
+        adicionar_detalhes_recursivo(
+            lista_id=lista.id,
+            multiplicador=ordem.quantidade,
+            acumulado=resultado,
+            vistos=vistos
+        )
+
+    # Fallback: cria detalhe genérico se houver necessidade sem detalhes
+    for item in resultado.values():
+        necessidade = int(item.get("necessario", 0))
+        estoque = int(item.get("estoque", 0))
+        faltando = max(0, necessidade - estoque)
+        detalhes = item.get("detalhes", [])
+
+        if faltando > 0 and not detalhes:
+            lead_time = int(item.get("lead_time") or 0)
+            item["detalhes"] = [{
+                "tipo": "fallback",
+                "descricao": "Necessidade líquida sem origem rastreável.",
+                "quantidade": faltando,
+                "estoque_considerado": estoque,
+                "lead_time": lead_time,
+                "data_sugerida": (date.today() + timedelta(days=lead_time)).isoformat(),
+                "origem": None,
+                "ordem_id": None,
+                "lista_id": None,
+            }]
+
+    return Response(list(resultado.values()), status=status.HTTP_200_OK)
+
 
 
 # core/views.py
@@ -273,25 +305,24 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def adicionar_detalhes_recursivo(lista_id, multiplicador, acumulado, vistos):
+def adicionar_detalhes_recursivo(lista_id, multiplicador, acumulado, vistos, ordem_id=None, lista_final_nome=None, nivel=0):
     """
     Expande a BOM a partir de uma lista_pai (id), multiplicando as quantidades
-    e acumulando por componente.
+    e acumulando por componente, com detalhamento por OP e lista.
     """
-    # Busca somente relações com componente válido
+    if lista_id in vistos:
+        return  # evita ciclos
+    vistos.add(lista_id)
+
     relacoes = (
         BOM.objects
         .filter(lista_pai_id=lista_id, componente__isnull=False)
         .select_related("componente")
-        .only("id", "quantidade",
-              "componente__id", "componente__codigo", "componente__nome",
-              "componente__estoque", "componente__lead_time")
     )
 
     for rel in relacoes:
         comp = rel.componente
-        if comp is None:   # proteção extra (defensivo)
-            logger.warning("BOM id %s sem componente (ignorada).", rel.id)
+        if comp is None:
             continue
 
         qtd_total = (rel.quantidade or 0) * (multiplicador or 1)
@@ -305,12 +336,37 @@ def adicionar_detalhes_recursivo(lista_id, multiplicador, acumulado, vistos):
                 "necessario": 0,
                 "estoque": getattr(comp, "estoque", 0),
                 "lead_time": getattr(comp, "lead_time", 0),
+                "detalhes": [],
             }
-        acumulado[key]["necessario"] += qtd_total
 
-        # Se este componente também for pai em outra BOM, expande (recursão)
+        acumulado[key]["necessario"] += qtd_total
+        acumulado[key]["faltando"] = max(0, acumulado[key]["necessario"] - acumulado[key]["estoque"])
+
+        acumulado[key]["detalhes"].append({
+            "tipo": "op",
+            "descricao": f"Necessário para OP #{ordem_id} do produto {lista_final_nome}",
+            "quantidade": qtd_total,
+            "estoque_considerado": getattr(comp, "estoque", 0),
+            "lead_time": getattr(comp, "lead_time", 0),
+            "data_sugerida": (date.today() + timedelta(days=comp.lead_time)).isoformat(),
+            "origem": "Ordem de Produção",
+            "ordem_id": ordem_id,
+            "lista_id": lista_id,
+        })
+
+        # Recursão se o componente for usado como pai em uma nova lista
         if BOM.objects.filter(lista_pai_id=comp.id, componente__isnull=False).exists():
-            adicionar_detalhes_recursivo(comp.id, qtd_total, acumulado, vistos)
+            adicionar_detalhes_recursivo(
+                lista_id=comp.id,
+                multiplicador=qtd_total,
+                acumulado=acumulado,
+                vistos=vistos,
+                ordem_id=ordem_id,
+                lista_final_nome=lista_final_nome,
+                nivel=nivel + 1
+            )
+
+
 
 
 @api_view(["POST"])

@@ -5,7 +5,7 @@ interface ResultadoMRP {
   codigo: string;
   nome: string;
   necessario: number;
-  em_estoque: number;
+  em_estoque: number;mrp_detalhado
   faltando: number;
   lead_time: number;
   data_compra: string;

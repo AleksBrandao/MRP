@@ -36,9 +36,9 @@ const fmt2 = (v: unknown) =>
   toNum(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const buildExportUrl = () => {
-  const base = (import.meta as any)?.env?.VITE_API_URL ?? "";
+  const base = import.meta.env.VITE_API_URL ?? "";
   const clean = String(base).replace(/\/+$/, "");
-  return clean ? `${clean}/exportar-mrp-excel/` : `/api/exportar-mrp-excel/`;
+  return `${clean}/exportar-mrp-excel/`;
 };
 
 export default function DetalhesMRP() {
@@ -53,7 +53,8 @@ export default function DetalhesMRP() {
     (async () => {
       try {
         setLoading(true);
-        const res = await api.get("/mrp/detalhado/");
+        const res = await api.get("/mrp/detalhado/");  // ✅ sem repetir /api
+
         if (!alive) return;
         const arr = Array.isArray(res.data) ? res.data : [];
         setDados(arr);
