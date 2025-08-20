@@ -1,90 +1,181 @@
-import { useState } from "react";
+// src/components/CadastrarComponente.tsx
+import { useMemo, useState } from "react";
 import { ComponenteAPI } from "../services/api";
 
-interface FormData {
+export type Componente = {
+  id?: number;
   codigo: string;
   nome: string;
-  fabricante: string;
-  codigo_fabricante: string;
-  unidade: string;
+  fabricante?: string;
+  codigo_fabricante?: string;
+  unidade?: string;
   estoque: number;
   lead_time: number;
-  tipo: "produto";  
-  id?: number; // opcional, usado na edição
-}
+  tipo: "componente";
+};
 
-export default function CadastrarComponente({
-  onClose,
-  onSuccess,
-  initialData,
-}: {
+type Props = {
   onClose: () => void;
-  onSuccess: () => void;
-  initialData?: FormData;
-}) {
-  const [form, setForm] = useState<FormData>(() => {
-    return initialData ?? {
+  onSaved: (saved: Componente) => void;     // ⬅️ devolve o objeto salvo
+  initialData?: Componente;
+};
+
+export default function CadastrarComponente({ onClose, onSaved, initialData }: Props) {
+  const empty: Componente = useMemo(
+    () => ({
       codigo: "",
       nome: "",
       fabricante: "",
       codigo_fabricante: "",
-      unidade: "un",
+      unidade: "Uds",
       estoque: 0,
       lead_time: 0,
       tipo: "componente",
-    };
-  });
+    }),
+    []
+  );
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setForm({ ...form, [name]: value });
-  };
+  const [form, setForm] = useState<Componente>(initialData ?? empty);
+  const [saving, setSaving] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
-  const handleSubmit = () => {
-    const acao = initialData?.id
-      ? ComponenteAPI.update(initialData.id, form)
-      : ComponenteAPI.create(form);
+  const set = (name: keyof Componente, value: any) =>
+    setForm((f) => ({ ...f, [name]: value }));
 
-    acao
-      .then(() => {
-        alert(initialData?.id ? "Componente atualizado com sucesso!" : "Componente cadastrado com sucesso!");
-        onSuccess();
-        onClose();
-      })
-      .catch((err) => {
-        console.error("❌ Erro ao salvar:", err.response?.data || err.message);
-        alert("Erro ao salvar componente.");
-      });
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErro(null);
+    setSaving(true);
+    try {
+      const resp = initialData?.id
+        ? await ComponenteAPI.update(initialData.id, { ...form, tipo: "componente" })
+        : await ComponenteAPI.create({ ...form, tipo: "componente" });
+
+      onSaved(resp.data);      // ⬅️ atualiza lista no pai
+    } catch (err: any) {
+      const detail =
+        err?.response?.data ? JSON.stringify(err.response.data) : err?.message || "Erro ao salvar.";
+      setErro(detail);
+      console.error("❌ Erro ao salvar:", detail);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div className="p-4">
-      <h2 className="text-lg font-semibold mb-4">
-        {initialData ? "Editar Componente" : "Cadastrar Componente"}
-      </h2>
-      <div className="grid grid-cols-2 gap-4">
-        <input name="codigo" placeholder="Código" onChange={handleChange} value={form.codigo} />
-        <input name="nome" placeholder="Nome" onChange={handleChange} value={form.nome} />
-        <input name="fabricante" placeholder="Fabricante" onChange={handleChange} value={form.fabricante} />
-        <input
-          name="codigo_fabricante"
-          placeholder="Código do Fabricante"
-          onChange={handleChange}
-          value={form.codigo_fabricante}
-        />
-        <input name="unidade" placeholder="Unidade (ex: un, kg)" onChange={handleChange} value={form.unidade} />
-        <input name="estoque" placeholder="Estoque" type="number" onChange={handleChange} value={form.estoque} />
-        <input name="lead_time" placeholder="Lead Time (dias)" type="number" onChange={handleChange} value={form.lead_time} />
+    <div className="p-6">
+      {/* Cabeçalho do cartão */}
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">
+          {initialData ? "Editar componente" : "Novo componente"}
+        </h2>
+        <button
+          onClick={onClose}
+          className="rounded-lg px-3 py-1.5 text-sm hover:bg-gray-100"
+        >
+          Fechar
+        </button>
       </div>
 
-      <div className="mt-4 flex justify-end gap-2">
-        <button onClick={onClose} className="bg-gray-300 px-4 py-2 rounded">
-          Cancelar
-        </button>
-        <button onClick={handleSubmit} className="bg-blue-500 text-white px-4 py-2 rounded">
-          {initialData ? "Salvar Alterações" : "Adicionar"}
-        </button>
-      </div>
+      {/* Form em 2 colunas, labels acima, inputs com borda arredondada */}
+      <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="mb-1 block text-sm text-gray-600">Código</label>
+          <input
+            value={form.codigo}
+            onChange={(e) => set("codigo", e.target.value)}
+            required
+            className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+            placeholder="ex: CH47610301M02"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm text-gray-600">Nome</label>
+          <input
+            value={form.nome}
+            onChange={(e) => set("nome", e.target.value)}
+            required
+            className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+            placeholder="ex: Rolamento 6202 2RS C3 WT"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm text-gray-600">Fabricante</label>
+          <input
+            value={form.fabricante || ""}
+            onChange={(e) => set("fabricante", e.target.value)}
+            className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+            placeholder="ex: SKF/NSK/FAG"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm text-gray-600">Código do Fabricante</label>
+          <input
+            value={form.codigo_fabricante || ""}
+            onChange={(e) => set("codigo_fabricante", e.target.value)}
+            className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+            placeholder="ex: 6202 2RS C3 WT"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm text-gray-600">Unidade</label>
+          <input
+            value={form.unidade || ""}
+            onChange={(e) => set("unidade", e.target.value)}
+            className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+            placeholder="ex: Uds"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm text-gray-600">Estoque</label>
+          <input
+            type="number"
+            value={form.estoque ?? 0}
+            onChange={(e) => set("estoque", Number(e.target.value))}
+            className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+            placeholder="0"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm text-gray-600">Lead time (dias)</label>
+          <input
+            type="number"
+            value={form.lead_time ?? 0}
+            onChange={(e) => set("lead_time", Number(e.target.value))}
+            className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+            placeholder="0"
+          />
+        </div>
+
+        {erro && (
+          <div className="col-span-2 rounded-xl bg-red-50 p-3 text-sm text-red-700">
+            {erro}
+          </div>
+        )}
+
+        <div className="col-span-2 mt-2 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl px-4 py-2 text-sm hover:bg-gray-100"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+          >
+            {saving ? "Salvando..." : "Salvar"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

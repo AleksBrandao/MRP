@@ -1,11 +1,19 @@
 // services/api.ts
 import api from "./http";
 
+// export const ComponenteAPI = {
+//   list: () => api.get("/produtos/"),
+//   create: (data) => api.post("/produtos/", data),            // ← não envia tipo
+//   update: (id, data) => api.put(`/produtos/${id}/`, data),   // ← não envia tipo
+//   remove: (id) => api.delete(`/produtos/${id}/`),
+// };
+
+
 export const ComponenteAPI = {
-  list: () => api.get("/produtos/"),
-  create: (data) => api.post("/produtos/", data),            // ← não envia tipo
-  update: (id, data) => api.put(`/produtos/${id}/`, data),   // ← não envia tipo
-  remove: (id) => api.delete(`/produtos/${id}/`),
+  list:   () => api.get("/componentes/"),
+  create: (data: any) => api.post("/componentes/", { ...data, tipo: "componente" }),
+  update: (id: number, data: any) => api.put(`/componentes/${id}/`, { ...data, tipo: "componente" }),
+  remove: (id: number) => api.delete(`/componentes/${id}/`),
 };
 
 export const ListaTecnicaAPI = {

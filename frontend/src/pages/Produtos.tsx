@@ -11,25 +11,23 @@ interface Produto {
   unidade?: string | null;
   estoque: number;
   lead_time: number;
-  tipo: string; // "produto" | "materia_prima" | "lista" ...
+  tipo: string; // "componente"
 }
 
 export default function Produtos() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editando, setEditando] = useState<Produto | null>(null);
-  const [carregando, setCarregando] = useState<boolean>(false);
+  const [carregando, setCarregando] = useState(false);
+  const [busca, setBusca] = useState("");
 
   const fetchProdutos = async () => {
     try {
       setCarregando(true);
-      const response = await ComponenteAPI.list();
-      const todos: Produto[] = response.data ?? [];
-      // Filtra somente os que são efetivamente componentes/produtos
-      const componentes = todos.filter((p) => p.tipo === "componente");
-      setProdutos(componentes);
-    } catch (error) {
-      console.error("Erro ao buscar produtos:", error);
+      const { data } = await ComponenteAPI.list(); // /componentes/
+      setProdutos(data ?? []);
+    } catch (e) {
+      console.error("Erro ao buscar componentes:", e);
     } finally {
       setCarregando(false);
     }
@@ -39,105 +37,152 @@ export default function Produtos() {
     fetchProdutos();
   }, []);
 
+  // Fecha modal com ESC
+  useEffect(() => {
+    if (!showModal) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setShowModal(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showModal]);
+
+  // Opcional: travar scroll do body quando modal aberto
+  useEffect(() => {
+    document.body.style.overflow = showModal ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [showModal]);
+
+  const filtrados = produtos.filter((p) => {
+    const q = busca.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      p.codigo?.toLowerCase().includes(q) ||
+      p.nome?.toLowerCase().includes(q) ||
+      p.fabricante?.toLowerCase().includes(q) ||
+      p.codigo_fabricante?.toLowerCase().includes(q)
+    );
+  });
+
   const handleEditar = (produto: Produto) => {
     setEditando(produto);
     setShowModal(true);
   };
 
   const handleExcluir = async (id: number) => {
-    const ok = confirm("Tem certeza que deseja excluir este componente?");
-    if (!ok) return;
+    if (!confirm("Tem certeza que deseja excluir este componente?")) return;
     try {
       await ComponenteAPI.remove(id);
-      fetchProdutos();
+      await fetchProdutos();
     } catch (err) {
       console.error("Erro ao excluir:", err);
       alert("Erro ao excluir componente.");
     }
   };
 
-  const getTipoLabel = (tipo: string) => {
-    switch (tipo) {
-      case "produto":
-        return "Componente";
-      case "materia_prima":
-        return "Matéria-Prima";
-      case "lista":
-        return "Lista Técnica";
-      default:
-        return tipo;
-    }
+  // ⬇️ Atualiza a tabela na hora (criação/edição)
+  const handleSaved = (saved: Produto) => {
+    setProdutos((prev) => {
+      const i = prev.findIndex((p) => p.id === saved.id);
+      if (i >= 0) {
+        const arr = [...prev];
+        arr[i] = saved;
+        return arr;
+      }
+      // insere no topo (ou troque por [...prev, saved] se preferir no fim)
+      return [saved, ...prev];
+    });
+    setShowModal(false);
+    setEditando(null);
+
+    // opcional: garantir consistência com o backend
+    void fetchProdutos();
   };
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">Produtos (Componentes)</h1>
-        <button
-          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-          onClick={() => {
-            setEditando(null);
-            setShowModal(true);
-          }}
-        >
-          + Novo Componente
-        </button>
+    <main className="mx-auto max-w-[1400px] px-6 py-6">
+      {/* Header */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold">
+          Produtos <span className="text-gray-500">(Componentes)</span>
+        </h1>
+
+        <div className="flex items-center gap-3">
+          <input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar por código, nome, fabricante..."
+            className="h-10 w-72 rounded-xl border border-gray-300 px-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+          <button
+            onClick={() => { setEditando(null); setShowModal(true); }}
+            className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-emerald-700"
+          >
+            + Novo Componente
+          </button>
+        </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full table-auto border-collapse">
-          <thead>
-            <tr className="bg-gray-100 text-left">
-              <th className="px-4 py-2">Código</th>
-              <th className="px-4 py-2">Nome</th>
-              <th className="px-4 py-2">Fabricante</th>
-              <th className="px-4 py-2">Código Fab.</th>
-              <th className="px-4 py-2">Unidade</th>
-              <th className="px-4 py-2">Estoque</th>
-              <th className="px-4 py-2">Lead Time</th>
-              <th className="px-4 py-2">Tipo</th>
-              <th className="px-4 py-2">Ações</th>
+      {/* Tabela em página cheia, sem “janela” */}
+      <div className="relative">
+        <table className="w-full table-fixed text-left">
+          {/* controle de largura das colunas */}
+          <colgroup>
+            {["w-40", "w-64", "w-56", "w-56", "w-24", "w-24", "w-28", "w-32"].map((w, i) => (
+              <col key={i} className={w} />
+            ))}
+          </colgroup>
+
+
+          <thead className="bg-gray-50 text-sm">
+            <tr className="text-gray-700">
+              <th className="px-4 py-3 font-medium">Código</th>
+              <th className="px-4 py-3 font-medium">Nome</th>
+              <th className="px-4 py-3 font-medium">Fabricante</th>
+              <th className="px-4 py-3 font-medium">Código Fab.</th>
+              <th className="px-4 py-3 font-medium">Unidade</th>
+              <th className="px-4 py-3 font-medium">Estoque</th>
+              <th className="px-4 py-3 font-medium">Lead Time</th>
+              <th className="px-4 py-3 font-medium">Ações</th>
             </tr>
           </thead>
-          <tbody>
+
+          <tbody className="divide-y divide-gray-100 text-sm">
             {carregando ? (
               <tr>
-                <td className="px-4 py-6 text-center text-gray-500" colSpan={9}>
-                  Carregando...
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                  Carregando…
                 </td>
               </tr>
-            ) : produtos.length === 0 ? (
+            ) : filtrados.length === 0 ? (
               <tr>
-                <td className="px-4 py-6 text-center text-gray-500" colSpan={9}>
-                  Nenhum componente cadastrado
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                  Nenhum componente encontrado.
                 </td>
               </tr>
             ) : (
-              produtos.map((produto) => (
-                <tr key={produto.id} className="border-b">
-                  <td className="px-4 py-2">{produto.codigo}</td>
-                  <td className="px-4 py-2">{produto.nome}</td>
-                  <td className="px-4 py-2">{produto.fabricante ?? "-"}</td>
-                  <td className="px-4 py-2">
-                    {produto.codigo_fabricante ?? "-"}
-                  </td>
-                  <td className="px-4 py-2">{produto.unidade ?? "-"}</td>
-                  <td className="px-4 py-2">{produto.estoque}</td>
-                  <td className="px-4 py-2">{produto.lead_time}</td>
-                  <td className="px-4 py-2">{getTipoLabel(produto.tipo)}</td>
-                  <td className="px-4 py-2">
-                    <button
-                      onClick={() => handleEditar(produto)}
-                      className="text-blue-600 hover:underline mr-2"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => handleExcluir(produto.id)}
-                      className="text-red-600 hover:underline"
-                    >
-                      Excluir
-                    </button>
+              filtrados.map((p) => (
+                <tr key={p.id}>
+                  <td className="px-4 py-3 font-mono whitespace-normal break-words">{p.codigo}</td>
+                  <td className="px-4 py-3 whitespace-normal break-words">{p.nome}</td>
+                  <td className="px-4 py-3 whitespace-normal break-words">{p.fabricante ?? "-"}</td>
+                  <td className="px-4 py-3 whitespace-normal break-words">{p.codigo_fabricante ?? "-"}</td>
+                  <td className="px-4 py-3">{p.unidade ?? "-"}</td>
+                  <td className="px-4 py-3">{p.estoque}</td>
+                  <td className="px-4 py-3">{p.lead_time}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleEditar(p)}
+                        className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs hover:bg-gray-50"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => handleExcluir(p.id)}
+                        className="rounded-lg border border-red-300 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                      >
+                        Excluir
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -146,24 +191,37 @@ export default function Produtos() {
         </table>
       </div>
 
+      {/* Modal único (overlay + conteúdo) */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-lg w-[600px]">
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowModal(false);
+              setEditando(null);
+            }
+          }}
+        >
+          <div className="w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
             <CadastrarComponente
-              onClose={() => {
+              initialData={editando ?? undefined}
+              onClose={() => { setShowModal(false); setEditando(null); }}
+              onSaved={(saved) => {              // ⬅️ troque onSuccess por onSaved
+                setProdutos(prev => {
+                  const i = prev.findIndex(p => p.id === saved.id);
+                  if (i >= 0) { const arr = [...prev]; arr[i] = saved; return arr; }
+                  return [saved, ...prev];
+                });
                 setShowModal(false);
                 setEditando(null);
+                // opcional: void fetchProdutos();
               }}
-              onSuccess={() => {
-                fetchProdutos();
-                setEditando(null);
-                setShowModal(false);
-              }}
-              initialData={editando}
             />
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }
