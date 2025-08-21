@@ -2,6 +2,7 @@ from django.db import models
 from simple_history.models import HistoricalRecords
 from django.core.exceptions import ValidationError
 from django.db.models import Q
+from decimal import Decimal
   
 class Produto(models.Model):
     TIPO_CHOICES = [
@@ -64,6 +65,17 @@ class BOM(models.Model):
     componente = models.ForeignKey(Produto, null=True, blank=True, on_delete=models.CASCADE, related_name='usos')
     sublista   = models.ForeignKey(ListaTecnica, null=True, blank=True, on_delete=models.CASCADE, related_name='usos_como_sublista')
     quantidade = models.DecimalField(max_digits=12, decimal_places=4, default=1)
+
+     # NOVOS CAMPOS
+    comentarios = models.CharField(max_length=255, blank=True, null=True)
+    ponderacao_operacao = models.DecimalField(max_digits=5, decimal_places=4, default=Decimal("1.0"))
+    quant_ponderada = models.DecimalField(max_digits=10, decimal_places=4, editable=False, default=Decimal("0.0"))
+
+    def save(self, *args, **kwargs):
+        if self.ponderacao_operacao is None:
+            self.ponderacao_operacao = Decimal("1.0")
+        self.quant_ponderada = (self.quantidade or Decimal("0.0")) * self.ponderacao_operacao
+        super().save(*args, **kwargs)
 
     def clean(self):
         # exatamente um dos dois: componente XOR sublista

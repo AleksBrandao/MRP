@@ -14,6 +14,8 @@ class ListaTecnicaSerializer(serializers.ModelSerializer):
 class BOMSerializer(serializers.ModelSerializer):
     lista_pai_nome = serializers.CharField(source="lista_pai.nome", read_only=True)
     lista_pai_codigo = serializers.CharField(source="lista_pai.codigo", read_only=True)
+    sublista_codigo   = serializers.CharField(source="sublista.codigo", read_only=True)
+    sublista_nome     = serializers.CharField(source="sublista.nome", read_only=True)
     componente_nome = serializers.CharField(source="componente.nome", read_only=True)
     componente_codigo = serializers.CharField(source="componente.codigo", read_only=True)
 
@@ -23,7 +25,8 @@ class BOMSerializer(serializers.ModelSerializer):
             "id",
             "lista_pai", "lista_pai_codigo", "lista_pai_nome",
             "componente", "componente_codigo", "componente_nome",
-            "quantidade",
+            "sublista", "sublista_codigo", "sublista_nome",
+            "quantidade", "ponderacao_operacao", "quant_ponderada", "comentarios"
         ]
 
 

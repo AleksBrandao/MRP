@@ -18,16 +18,27 @@ export interface BOMItem {
   id: number;
 
   // Pai da relação (Lista Técnica)
-  lista_pai: number;              // id
+  lista_pai: number;
   lista_pai_codigo?: string | null;
   lista_pai_nome?: string | null;
 
-  // Componente
-  componente: number;             // id
+  // Componente (opcional)
+  componente?: number | null;
   componente_codigo?: string | null;
   componente_nome?: string | null;
 
+  // Sublista (opcional)
+  sublista?: number | null;
+  sublista_codigo?: string | null;
+  sublista_nome?: string | null;
+
+  // Quantidade
   quantidade: number | string;
+
+  // NOVOS CAMPOS
+  comentarios?: string;
+  ponderacao_operacao?: number | string;
+  quant_ponderada?: number | string;
 }
 
 // ===== Helpers =====
@@ -85,7 +96,7 @@ export default function BOMPage() {
     carregarListas();
     carregarComponentes();
     carregarBOM();
-  }, []);
+  }, []); // <- muito importante: array vazio!
 
   // ===== Ações =====
   const handleAdd = async () => {
@@ -114,6 +125,9 @@ export default function BOMPage() {
     await BOMAPI.remove(id);
     await carregarBOM();
   };
+
+  const fmtPct = (val?: number | string) =>
+    val != null ? `${(Number(val) * 100).toFixed(0)}%` : "100%";
 
   // ===== Render =====
   return (
@@ -167,53 +181,79 @@ export default function BOMPage() {
 
       {/* Tabela */}
       <h2 className="text-lg font-semibold mb-2">Estrutura Atual</h2>
-      <div className="overflow-x-auto">
-        <table className="min-w-full border-collapse">
+      <div>
+        <table className="w-full border-collapse">
           <thead>
             <tr className="bg-gray-50">
               <th className="border px-4 py-2 text-left">Lista Técnica (Pai)</th>
+              <th className="border px-4 py-2 text-left">Sublista</th> {/* NOVO */}
               <th className="border px-4 py-2 text-left">Componente</th>
               <th className="border px-4 py-2 text-right">Quantidade</th>
+              <th className="border px-4 py-2 text-right">Ponderação</th>         {/* NOVO */}
+              <th className="border px-4 py-2 text-right">Quant. Ponderada</th>   {/* NOVO */}
+              <th className="border px-4 py-2 text-right">Comentários</th>        {/* NOVO */}
               <th className="border px-4 py-2 text-center">Ações</th>
             </tr>
           </thead>
 
           <tbody>
-            {bom.length === 0 && (
+            {bom.length === 0 ? (
               <tr>
-                <td className="border px-4 py-6 text-center text-gray-500" colSpan={4}>
+                <td className="border px-4 py-6 text-center text-gray-500" colSpan={8}>
                   Nenhum item cadastrado na BOM.
                 </td>
               </tr>
+            ) : (
+              bom
+                .filter((item) => !!item && (item.componente || item.sublista)) // só renderiza se houver componente ou sublista
+                .map((item) => (
+                  <tr key={item.id}>
+                    <td className="border px-4 py-2">
+                      {label(item.lista_pai_codigo, item.lista_pai_nome)}
+                    </td>
+                    <td className="border px-4 py-2">
+                      {item.sublista_codigo
+                        ? label(item.sublista_codigo, item.sublista_nome)
+                        : "—"}
+                    </td>
+                    <td className="border px-4 py-2">
+                      {item.componente_codigo
+                        ? label(item.componente_codigo, item.componente_nome)
+                        : "—"}
+                    </td>
+                    <td className="border px-4 py-2 text-right">
+                      {fmtQtd(item.quantidade)}
+                    </td>
+                    <td className="border px-4 py-2 text-right">
+                      {fmtPct(item.ponderacao_operacao)}
+                    </td>
+                    <td className="border px-4 py-2 text-right">
+                      {fmtQtd(item.quant_ponderada)}
+                    </td>
+                    <td className="border px-4 py-2 text-right">
+                      {item.comentarios || "—"}
+                    </td>
+                    <td className="border px-4 py-2 text-center space-x-2">
+                      <button
+                        onClick={() => iniciarEdicao(item)}
+                        className="text-blue-600 hover:underline"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        className="text-red-600 hover:underline"
+                      >
+                        Excluir
+                      </button>
+                    </td>
+                  </tr>
+                ))
             )}
-
-            {bom.map((item) => (
-              <tr key={item.id}>
-                <td className="border px-4 py-2">
-                  {label(item.lista_pai_codigo, item.lista_pai_nome)}
-                </td>
-                <td className="border px-4 py-2">
-                  {label(item.componente_codigo, item.componente_nome)}
-                </td>
-                <td className="border px-4 py-2 text-right">{fmtQtd(item.quantidade)}</td>
-                <td className="border px-4 py-2 text-center space-x-2">
-                  <button
-                    onClick={() => iniciarEdicao(item)}
-                    className="text-blue-600 hover:underline"
-                  >
-                    Editar
-                  </button>
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    className="text-red-600 hover:underline"
-                  >
-                    Excluir
-                  </button>
-                </td>
-              </tr>
-            ))}
           </tbody>
+
         </table>
+
       </div>
     </div>
   );
