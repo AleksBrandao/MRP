@@ -1,7 +1,13 @@
+/* src/index.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+html, body, #root { height: 100%; }
+
 body {
-  @apply bg-gray-50 text-gray-800;
+  @apply bg-gray-50 text-slate-800 antialiased;
+  overflow-y: scroll;        /* reserva espaço da barra */
+  scrollbar-gutter: stable;  /* evita “andar” para a direita */
+  margin: 0;
 }
