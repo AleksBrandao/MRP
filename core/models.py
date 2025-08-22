@@ -1,8 +1,12 @@
 from django.db import models
 from simple_history.models import HistoricalRecords
 from django.core.exceptions import ValidationError
-from django.db.models import Q
-from decimal import Decimal
+# from django.db.models import Q
+from decimal import Decimal, ROUND_HALF_UP
+from django.db.models import Q, CheckConstraint, F
+
+PCT = Decimal("100")
+FOUR_DP = Decimal("0.0001")
   
 class Produto(models.Model):
     TIPO_CHOICES = [
@@ -68,27 +72,43 @@ class BOM(models.Model):
 
      # NOVOS CAMPOS
     comentarios = models.CharField(max_length=255, blank=True, null=True)
-    ponderacao_operacao = models.DecimalField(max_digits=5, decimal_places=4, default=Decimal("1.0"))
-    quant_ponderada = models.DecimalField(max_digits=10, decimal_places=4, editable=False, default=Decimal("0.0"))
+    ponderacao_operacao = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        default=100
+    )
+    quant_ponderada = models.DecimalField(
+        max_digits=12, decimal_places=4, editable=False, default=Decimal("0.0000")
+    )
 
     def save(self, *args, **kwargs):
-        if self.ponderacao_operacao is None:
-            self.ponderacao_operacao = Decimal("1.0")
-        self.quant_ponderada = (self.quantidade or Decimal("0.0")) * self.ponderacao_operacao
+        q = self.quantidade or Decimal("0")
+        p = self.ponderacao_operacao
+        if p is None:
+            p = Decimal("100")  # trata None como 100%
+        # quantidade * (percentual / 100)
+        qp = q * (p / PCT)
+        # opcional: arredondar para 4 casas
+        self.quant_ponderada = qp.quantize(FOUR_DP, rounding=ROUND_HALF_UP)
         super().save(*args, **kwargs)
 
     def clean(self):
-        # exatamente um dos dois: componente XOR sublista
         if bool(self.componente) == bool(self.sublista):
             raise ValidationError("Informe apenas um: componente OU sublista.")
         
-        class Meta:
-            constraints = [
-                models.CheckConstraint(
-                    name="bom_xor_componente_sublista",
-                    check=(
-                        (Q(componente__isnull=False) & Q(sublista__isnull=True)) |
-                        (Q(componente__isnull=True)  & Q(sublista__isnull=False))
-                    ),
+    class Meta:
+        constraints = [
+            # XOR: exatamente um entre componente e sublista
+            CheckConstraint(
+                name="bom_xor_componente_sublista",
+                check=(
+                    (Q(componente__isnull=False) & Q(sublista__isnull=True)) |
+                    (Q(componente__isnull=True)  & Q(sublista__isnull=False))
                 ),
-            ]
+            ),
+            # ponderação entre 0 e 100
+            CheckConstraint(
+                name="bom_ponderacao_0_100",
+                check=Q(ponderacao_operacao__gte=0) & Q(ponderacao_operacao__lte=100),
+            ),
+        ]

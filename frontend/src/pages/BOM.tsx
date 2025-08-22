@@ -1,260 +1,221 @@
 import { useEffect, useMemo, useState } from "react";
-import { BOMAPI, ComponenteAPI, ListaTecnicaAPI } from "../services/api";
+import { BOMAPI} from "../services/api";
+import type { BOMItem } from "../services/api";
+import CadastrarBOMItem from "../components/CadastrarBOMItem";
 
-// ===== Tipos =====
-export interface ListaTecnica {
-  id: number;
-  codigo: string;
-  nome: string;
-}
-
-export interface Componente {
-  id: number;
-  codigo: string;
-  nome: string;
-}
-
-export interface BOMItem {
-  id: number;
-
-  // Pai da relação (Lista Técnica)
-  lista_pai: number;
-  lista_pai_codigo?: string | null;
-  lista_pai_nome?: string | null;
-
-  // Componente (opcional)
-  componente?: number | null;
-  componente_codigo?: string | null;
-  componente_nome?: string | null;
-
-  // Sublista (opcional)
-  sublista?: number | null;
-  sublista_codigo?: string | null;
-  sublista_nome?: string | null;
-
-  // Quantidade
-  quantidade: number | string;
-
-  // NOVOS CAMPOS
-  comentarios?: string;
-  ponderacao_operacao?: number | string;
-  quant_ponderada?: number | string;
-}
-
-// ===== Helpers =====
-const label = (codigo?: string | null, nome?: string | null) => {
-  const c = (codigo ?? "").trim();
-  const n = (nome ?? "").trim();
-  if (!c && !n) return "—";
-  if (c && n) return `[${c}] ${n}`;
-  return c ? `[${c}]` : n;
-};
-
-const fmtQtd = (q: number | string | null | undefined) => {
-  const num = typeof q === "number" ? q : parseFloat(String(q ?? "0"));
-  return Number.isFinite(num)
-    ? num.toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 })
-    : "0,0000";
-};
+type Option = { value: number; label: string };
 
 export default function BOMPage() {
-  // selects
-  const [listas, setListas] = useState<ListaTecnica[]>([]);
-  const [componentes, setComponentes] = useState<Componente[]>([]);
-  const [listaSelecionada, setListaSelecionada] = useState<number | "">("");
-  const [componenteSelecionado, setComponenteSelecionado] = useState<number | "">("");
+  const [items, setItems] = useState<BOMItem[]>([]);
+  const [listas, setListas] = useState<Option[]>([]);
+  const [componentes, setComponentes] = useState<Option[]>([]);
+  const [openModal, setOpenModal] = useState(false);
+  const [editing, setEditing] = useState<BOMItem | null>(null);
 
-  // formulário
-  const [quantidade, setQuantidade] = useState<string>("1");
+  // filtros rápidos da barra superior (opcional)
+  const [selLista, setSelLista] = useState<number>(0);
+  const [selComponente, setSelComponente] = useState<number>(0);
 
-  // tabela / itens
-  const [bom, setBom] = useState<BOMItem[]>([]);
-
-  // edição (opcional)
-  const [editando, setEditando] = useState<BOMItem | null>(null);
-
-  // ===== Carregamentos =====
-  const carregarListas = async () => {
-    const { data } = await ListaTecnicaAPI.list();
-    setListas(data);
-  };
-
-  const carregarComponentes = async () => {
-    const { data } = await ComponenteAPI.list();
-    setComponentes(
-      // se a API retorna produtos misturados, filtra só "produto"/componentes se necessário
-      Array.isArray(data) ? data : []
-    );
-  };
-
-  const carregarBOM = async () => {
-    const { data } = await BOMAPI.list();
-    setBom(data);
+  const carregar = async () => {
+    const resp = await BOMAPI.list();
+    setItems(resp.data || []);
   };
 
   useEffect(() => {
-    carregarListas();
-    carregarComponentes();
-    carregarBOM();
-  }, []); // <- muito importante: array vazio!
+    carregar();
+    BOMAPI.listas().then((r) => {
+      setListas(
+        (r.data || []).map((x: any) => ({
+          value: x.id,
+          label: x.codigo ? `[${x.codigo}] ${x.nome}` : x.nome,
+        }))
+      );
+    });
+    BOMAPI.componentes().then((r) => {
+      setComponentes(
+        (r.data || []).map((x: any) => ({
+          value: x.id,
+          label: x.codigo ? `[${x.codigo}] ${x.nome}` : x.nome,
+        }))
+      );
+    });
+  }, []);
 
-  // ===== Ações =====
-  const handleAdd = async () => {
-    if (!listaSelecionada || !componenteSelecionado) return;
+  const filtered = useMemo(() => {
+    return items.filter((it) => {
+      if (selLista && it.lista_pai !== selLista) return false;
+      if (selComponente && it.componente !== selComponente) return false;
+      return true;
+    });
+  }, [items, selLista, selComponente]);
 
-    const payload = {
-      lista_pai: Number(listaSelecionada),
-      componente: Number(componenteSelecionado),
-      quantidade: parseFloat(quantidade || "0"),
-    };
-
-    await BOMAPI.create(payload);
-    setQuantidade("1");
-    setComponenteSelecionado("");
-    await carregarBOM();
+  const onAddClick = () => {
+    setEditing(null);
+    setOpenModal(true);
+  };
+  const onEditClick = (row: BOMItem) => {
+    setEditing(row);
+    setOpenModal(true);
+  };
+  const onSaved = () => {
+    carregar();
+  };
+  const onDelete = async (row: BOMItem) => {
+    if (!row.id) return;
+    if (!confirm("Confirma excluir este item da BOM?")) return;
+    await BOMAPI.remove(row.id);
+    carregar();
   };
 
-  const iniciarEdicao = (item: BOMItem) => {
-    setEditando(item);
-    setListaSelecionada(item.lista_pai);
-    setComponenteSelecionado(item.componente);
-    setQuantidade(String(item.quantidade ?? "1"));
-  };
+  const nomeLista = (id?: number) => listas.find((l) => l.value === id)?.label || "";
+  const nomeComp = (id?: number) => componentes.find((c) => c.value === id)?.label || "";
 
-  const handleDelete = async (id: number) => {
-    await BOMAPI.remove(id);
-    await carregarBOM();
-  };
-
-  const fmtPct = (val?: number | string) =>
-    val != null ? `${(Number(val) * 100).toFixed(0)}%` : "100%";
-
-  // ===== Render =====
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       <h1 className="text-2xl font-semibold mb-4">Cadastro de Estrutura de Produto (BOM)</h1>
 
-      {/* Formulário */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
-        <select
-          className="border rounded px-3 py-2"
-          value={listaSelecionada}
-          onChange={(e) => setListaSelecionada(e.target.value ? Number(e.target.value) : "")}
-        >
-          <option value="">Selecione a Lista Técnica (Pai)</option>
-          {listas.map((l) => (
-            <option key={l.id} value={l.id}>
-              [{l.codigo}] {l.nome}
-            </option>
-          ))}
-        </select>
+      {/* Barra superior (igual estilo de Produtos) */}
+      <div className="bg-white rounded-2xl border p-4 mb-6 shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium mb-1">Selecione a Lista Técnica</label>
+            <select
+              className="w-full border rounded-lg px-3 py-2"
+              value={selLista || 0}
+              onChange={(e) => setSelLista(Number(e.target.value))}
+            >
+              <option value={0}>Todas</option>
+              {listas.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <select
-          className="border rounded px-3 py-2"
-          value={componenteSelecionado}
-          onChange={(e) => setComponenteSelecionado(e.target.value ? Number(e.target.value) : "")}
-        >
-          <option value="">Selecione o Componente</option>
-          {componentes.map((c) => (
-            <option key={c.id} value={c.id}>
-              [{c.codigo}] {c.nome}
-            </option>
-          ))}
-        </select>
+          <div className="md:col-span-1">
+            <label className="block text-sm font-medium mb-1">Selecione o Componente</label>
+            <select
+              className="w-full border rounded-lg px-3 py-2"
+              value={selComponente || 0}
+              onChange={(e) => setSelComponente(Number(e.target.value))}
+            >
+              <option value={0}>Todos</option>
+              {componentes.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <input
-          type="number"
-          step="any"
-          className="border rounded px-3 py-2"
-          value={quantidade}
-          onChange={(e) => setQuantidade(e.target.value)}
-          placeholder="Quantidade"
-        />
+          <div className="flex items-end">
+            <button
+              onClick={onAddClick}
+              className="w-full md:w-auto px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Adicionar Componente
+            </button>
+          </div>
+        </div>
       </div>
 
-      <button
-        onClick={handleAdd}
-        className="bg-blue-600 text-white rounded px-4 py-2 mb-6 hover:bg-blue-700"
-      >
-        {editando ? "Salvar Edição" : "Adicionar Componente"}
-      </button>
-
       {/* Tabela */}
-      <h2 className="text-lg font-semibold mb-2">Estrutura Atual</h2>
-      <div>
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-gray-50">
-              <th className="border px-4 py-2 text-left">Lista Técnica (Pai)</th>
-              <th className="border px-4 py-2 text-left">Sublista</th> {/* NOVO */}
-              <th className="border px-4 py-2 text-left">Componente</th>
-              <th className="border px-4 py-2 text-right">Quantidade</th>
-              <th className="border px-4 py-2 text-right">Ponderação</th>         {/* NOVO */}
-              <th className="border px-4 py-2 text-right">Quant. Ponderada</th>   {/* NOVO */}
-              <th className="border px-4 py-2 text-right">Comentários</th>        {/* NOVO */}
-              <th className="border px-4 py-2 text-center">Ações</th>
+  <div className="px-4 md:px-8 py-6">
+     <h1 className="text-2xl font-semibold mb-4">Cadastro de Estrutura de Produto (BOM)</h1>
+      <table className="w-full table-auto text-sm border border-gray-300">
+          <colgroup>
+            <col className="w-48" />
+            <col className="w-40" />
+            <col className="w-80" />
+            <col className="w-28" />
+            <col className="w-28" />
+            <col className="w-32" />
+            <col className="w-80" />
+            <col className="w-24" />
+          </colgroup>
+          <thead className="bg-gray-100 text-gray-700 border-b">
+            <tr>
+              <th className="text-left px-4 py-2">Lista Técnica (Pai)</th>
+              <th className="text-left px-4 py-2">Sublista</th>
+              <th className="text-left px-4 py-2">Componente</th>
+              <th className="text-right px-4 py-2">Quantidade</th>
+              <th className="text-right px-4 py-2">Ponderação</th>
+              <th className="text-right px-4 py-2">Quant. Ponderada</th>
+              <th className="text-left px-4 py-2">Comentários</th>
+              <th className="text-left px-4 py-2">Ações</th>
             </tr>
           </thead>
-
           <tbody>
-            {bom.length === 0 ? (
-              <tr>
-                <td className="border px-4 py-6 text-center text-gray-500" colSpan={8}>
-                  Nenhum item cadastrado na BOM.
-                </td>
-              </tr>
-            ) : (
-              bom
-                .filter((item) => !!item && (item.componente || item.sublista)) // só renderiza se houver componente ou sublista
-                .map((item) => (
-                  <tr key={item.id}>
-                    <td className="border px-4 py-2">
-                      {label(item.lista_pai_codigo, item.lista_pai_nome)}
-                    </td>
-                    <td className="border px-4 py-2">
-                      {item.sublista_codigo
-                        ? label(item.sublista_codigo, item.sublista_nome)
-                        : "—"}
-                    </td>
-                    <td className="border px-4 py-2">
-                      {item.componente_codigo
-                        ? label(item.componente_codigo, item.componente_nome)
-                        : "—"}
-                    </td>
-                    <td className="border px-4 py-2 text-right">
-                      {fmtQtd(item.quantidade)}
-                    </td>
-                    <td className="border px-4 py-2 text-right">
-                      {fmtPct(item.ponderacao_operacao)}
-                    </td>
-                    <td className="border px-4 py-2 text-right">
-                      {fmtQtd(item.quant_ponderada)}
-                    </td>
-                    <td className="border px-4 py-2 text-right">
-                      {item.comentarios || "—"}
-                    </td>
-                    <td className="border px-4 py-2 text-center space-x-2">
+            {filtered.map((row) => {
+              const listaLabel =
+                row.lista_pai_nome
+                  ? (row.lista_pai_codigo ? `[${row.lista_pai_codigo}] ` : "") + row.lista_pai_nome
+                  : nomeLista(row.lista_pai);
+
+              const sublistaLabel =
+                row.sublista_nome
+                  ? (row.sublista_codigo ? `[${row.sublista_codigo}] ` : "") + row.sublista_nome
+                  : (row.sublista ? nomeLista(row.sublista) : "—");
+
+              const compLabel =
+                row.componente_nome
+                  ? (row.componente_codigo ? `[${row.componente_codigo}] ` : "") + row.componente_nome
+                  : nomeComp(row.componente);
+
+              return (
+                <tr key={row.id} className="border-t">
+                  <td className="px-4 py-2">{listaLabel}</td>
+                  <td className="px-4 py-2">{sublistaLabel}</td>
+                  <td className="px-4 py-2">{compLabel}</td>
+                  <td className="px-4 py-2 text-right">{Number(row.quantidade).toLocaleString()}</td>
+                  <td className="px-4 py-2 text-right">
+                    {Number(row.ponderacao_operacao).toLocaleString()}%
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    {Number(row.quant_ponderada ?? 0).toLocaleString(undefined, {
+                      minimumFractionDigits: 4,
+                      maximumFractionDigits: 4,
+                    })}
+                  </td>
+                  <td className="px-4 py-2">{row.comentarios || "—"}</td>
+                  <td className="px-4 py-2">
+                    <div className="flex gap-3">
                       <button
-                        onClick={() => iniciarEdicao(item)}
                         className="text-blue-600 hover:underline"
+                        onClick={() => onEditClick(row)}
                       >
                         Editar
                       </button>
                       <button
-                        onClick={() => handleDelete(item.id)}
                         className="text-red-600 hover:underline"
+                        onClick={() => onDelete(row)}
                       >
                         Excluir
                       </button>
-                    </td>
-                  </tr>
-                ))
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tr>
+                <td className="px-4 py-6 text-center text-gray-500" colSpan={8}>
+                  Nenhum item encontrado.
+                </td>
+              </tr>
             )}
           </tbody>
-
         </table>
-
       </div>
+
+      {/* Modal */}
+      <CadastrarBOMItem
+        open={openModal}
+        onClose={() => setOpenModal(false)}
+        onSaved={onSaved}
+        initialData={editing}
+      />
     </div>
   );
 }

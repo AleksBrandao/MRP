@@ -12,22 +12,44 @@ class ListaTecnicaSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 class BOMSerializer(serializers.ModelSerializer):
-    lista_pai_nome = serializers.CharField(source="lista_pai.nome", read_only=True)
-    lista_pai_codigo = serializers.CharField(source="lista_pai.codigo", read_only=True)
-    sublista_codigo   = serializers.CharField(source="sublista.codigo", read_only=True)
-    sublista_nome     = serializers.CharField(source="sublista.nome", read_only=True)
-    componente_nome = serializers.CharField(source="componente.nome", read_only=True)
-    componente_codigo = serializers.CharField(source="componente.codigo", read_only=True)
+    componente = serializers.PrimaryKeyRelatedField(
+        queryset=Produto.objects.all(),
+        required=False,
+        allow_null=True
+    )
+    sublista = serializers.PrimaryKeyRelatedField(
+        queryset=ListaTecnica.objects.all(),
+        required=False,
+        allow_null=True
+    )
+    quant_ponderada = serializers.SerializerMethodField()
+    lista_pai_codigo = serializers.CharField(source='lista_pai.codigo', read_only=True)
+    lista_pai_nome = serializers.CharField(source='lista_pai.nome', read_only=True)
+    sublista_codigo = serializers.CharField(source='sublista.codigo', read_only=True)
+    sublista_nome = serializers.CharField(source='sublista.nome', read_only=True)
+    componente_codigo = serializers.CharField(source='componente.codigo', read_only=True)
+    componente_nome = serializers.CharField(source='componente.nome', read_only=True)
+    ponderacao_operacao = serializers.DecimalField(
+    max_digits=7,       # 3 inteiros + 4 decimais
+    decimal_places=4,
+    min_value=0,
+    max_value=100
+)
 
     class Meta:
         model = BOM
         fields = [
-            "id",
-            "lista_pai", "lista_pai_codigo", "lista_pai_nome",
-            "componente", "componente_codigo", "componente_nome",
-            "sublista", "sublista_codigo", "sublista_nome",
-            "quantidade", "ponderacao_operacao", "quant_ponderada", "comentarios"
+            "id", "lista_pai", "sublista", "componente",
+            "quantidade", "ponderacao_operacao", "comentarios",
+            "quant_ponderada",
+            "lista_pai_codigo", "lista_pai_nome",
+            "sublista_codigo", "sublista_nome",
+            "componente_codigo", "componente_nome"
         ]
+
+    def get_quant_ponderada(self, obj):
+        return obj.quant_ponderada
+
 
 
 class OrdemProducaoSerializer(serializers.ModelSerializer):

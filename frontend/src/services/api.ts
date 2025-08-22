@@ -43,17 +43,41 @@ export const OrdemAPI = {
   remove: (id: number) => api.delete(`/ordens/${id}/`),
 };
 
-// ===== BOM =====
-export type BOMCreatePayload = {
+
+// ====== NOVO: Tipos ======
+// ...restante do arquivo
+
+// Final, corrigido e completo
+export type BOMItem = {
+  id?: number;
   lista_pai: number;
+  sublista?: number | null;
   componente: number;
   quantidade: number;
+  ponderacao_operacao: number;
+  quant_ponderada?: number;
+  comentarios?: string;
+  lista_pai_codigo?: string;
+  lista_pai_nome?: string;
+  sublista_codigo?: string;
+  sublista_nome?: string;
+  componente_codigo?: string;
+  componente_nome?: string;
 };
 
+export  type BOMCreatePayload = Omit<BOMItem, "id" | "quant_ponderada" | "lista_pai_codigo" | "lista_pai_nome" | "sublista_codigo" | "sublista_nome" | "componente_codigo" | "componente_nome">;
+type BOMUpdatePayload = Partial<BOMCreatePayload>;
+
 export const BOMAPI = {
-  list: () => api.get("/bom/"),
+  list: () => api.get<BOMItem[]>("/bom/"),
   create: (data: BOMCreatePayload) => api.post("/bom/", data),
-  update: (id: number, data: BOMCreatePayload) => api.put(`/bom/${id}/`, data),
+  update: (id: number, data: BOMUpdatePayload) => api.put(`/bom/${id}/`, data),
   remove: (id: number) => api.delete(`/bom/${id}/`),
-  tree: (listaId: number) => api.get(`/bom/${listaId}/tree/`),
+  listas: () => api.get("/listas-tecnicas/"),
+  componentes: () => api.get("/componentes/"),
 };
+
+api.interceptors.request.use((config) => {
+  console.log("🚀 Enviando para backend:", config.data);
+  return config;
+});
