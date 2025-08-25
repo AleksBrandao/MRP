@@ -3,11 +3,13 @@ from datetime import date, timedelta
 from io import BytesIO
 import csv
 from decimal import Decimal
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 import logging
 
 from django.http import HttpResponse
 from rest_framework import viewsets, filters, status
+from rest_framework.views import APIView
+
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
@@ -18,6 +20,11 @@ from .serializers import (
     OrdemProducaoSerializer,
     ListaTecnicaSerializer,
 )
+
+from django.utils.functional import cached_property
+
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 
 logger = logging.getLogger(__name__)
 # =========================
@@ -317,13 +324,6 @@ def mrp_detalhado(request):
     return Response(list(resultado.values()), status=status.HTTP_200_OK)
 
 
-
-# core/views.py
-from django.db.models import Prefetch
-import logging
-
-logger = logging.getLogger(__name__)
-
 def adicionar_detalhes_recursivo(lista_id, multiplicador, acumulado, vistos, ordem_id=None, lista_final_nome=None, nivel=0):
     """
     Expande a BOM a partir de uma lista_pai (id), multiplicando as quantidades
@@ -460,3 +460,213 @@ def explodir_lista(lista: ListaTecnica, fator: Decimal, necessidades: dict, nive
 
         elif item.sublista:
             explodir_lista(item.sublista, mult, necessidades, nivel + 1, codigo_pai=lista.codigo)
+
+# --- helper para montar "[CODIGO] NOME" com segurança ---
+def _fmt_codigo_nome(obj):
+    """
+    Formata como "[CODIGO] NOME" quando houver código.
+    Se não houver código, retorna apenas o nome.
+    """
+    if not obj:
+        return ""
+    codigo = (getattr(obj, "codigo", "") or "").strip()
+    nome = (getattr(obj, "nome", "") or "").strip()
+    return f"[{codigo}] {nome}".strip() if codigo else nome
+
+
+def _cadeia_desde_raiz(no):
+    """
+    Retorna a cadeia de nós da RAIZ até 'no' (incluindo 'no').
+    Usa o atributo 'parent' se existir em ListaTecnica. Se não existir,
+    a cadeia terá apenas o próprio nó.
+    """
+    if not no:
+        return []
+
+    cadeia = []
+    atual = no
+    safety = 0
+    # sobe enquanto houver parent, protegendo contra ciclos
+    while atual and safety < 20:
+        cadeia.append(atual)
+        atual = getattr(atual, "parent", None)  # funciona mesmo se 'parent' não existir
+        safety += 1
+
+    # cadeia está do nó atual para cima; invertendo fica raiz -> ... -> nó
+    return list(reversed(cadeia))
+
+# --- helper para obter cadeia hierárquica a partir de uma lista (se existir parent) ---
+def _hierarquia(lista):
+    """
+    Retorna até 5 níveis: [Série, Sistema, Conjunto, Subconjunto, Item]
+    Se o seu modelo ListaTecnica não tiver `parent`, nada quebra: os níveis extras ficam vazios.
+    """
+    niveis = ["", "", "", "", ""]
+    if not lista:
+        return niveis
+
+    # Caminha para cima se houver `parent`. Mantém robusto se não existir.
+    cadeia = []
+    atual = lista
+    safety = 0
+    while atual and safety < 10:
+        cadeia.append(atual)
+        atual = getattr(atual, "parent", None)  # se não existir parent, vira None
+        safety += 1
+
+    cadeia = list(reversed(cadeia))  # do mais alto ao mais baixo
+    for i in range(min(5, len(cadeia))):
+        niveis[i] = _fmt_codigo_nome(cadeia[i])
+
+    return niveis
+
+class BOMFlatView(APIView):
+    """
+    GET /api/bom-flat/?lista_id=...&search=...
+    Retorna linhas em formato de planilha:
+    Série, Sistema, Conjunto, Subconjunto, Item (apenas se nivel==4),
+    Componente, Quantidade, Ponderação, Quant. Ponderada, Comentários, nivel.
+    """
+
+    def get(self, request, *args, **kwargs):
+        lista_id = request.GET.get("lista_id")
+        search = (request.GET.get("search") or "").strip()
+
+        # ⬇️ base
+        qs = BOM.objects.select_related("lista_pai", "sublista", "componente")
+
+        # ⬇️ NOVO: por padrão, só traz linhas com componente
+        incluir_grupos = request.GET.get("incluir_grupos")  # "1"/"true" para incluir linhas só com sublista
+        if not (incluir_grupos and incluir_grupos.lower() in ("1", "true", "t", "yes")):
+            qs = qs.filter(componente__isnull=False)
+
+        if lista_id:
+            qs = qs.filter(lista_pai_id=lista_id)
+
+        if search:
+            qs = qs.filter(
+                Q(lista_pai__codigo__icontains=search)
+                | Q(lista_pai__nome__icontains=search)
+                | Q(sublista__codigo__icontains=search)
+                | Q(sublista__nome__icontains=search)
+                | Q(componente__codigo__icontains=search)
+                | Q(componente__nome__icontains=search)
+                | Q(comentarios__icontains=search)
+            )
+
+        linhas = []
+        for item in qs.order_by("lista_pai__codigo", "id"):
+            # Nó de referência da linha: se houver sublista use-a, senão a própria lista_pai
+            no_ref = item.sublista or item.lista_pai
+
+            # Cadeia raiz -> ... -> nó
+            cadeia = _cadeia_desde_raiz(no_ref)
+
+            # Mapeia posições 0..4 para Série, Sistema, Conjunto, Subconjunto, Item
+            cols = ["", "", "", "", ""]
+            for i, nodo in enumerate(cadeia[:5]):
+                cols[i] = _fmt_codigo_nome(nodo)
+
+            serie, sistema, conjunto, subconjunto, item_nivel = cols
+
+            # nível do nó atual (0=Série, 1=Sistema, 2=Conjunto, 3=Subconjunto, 4=Item)
+            nivel = min(len(cadeia) - 1, 4) if cadeia else 0
+
+            # Ponderação (%). Se o campo não existir no modelo, cai para 100.
+            ponderacao = getattr(item, "ponderacao_operacao", 100) or 100
+
+            # Quantidade ponderada: usa campo pronto se existir; senão calcula.
+            if hasattr(item, "quant_ponderada") and item.quant_ponderada is not None:
+                quant_pond = float(item.quant_ponderada)
+            else:
+                q = float(item.quantidade or 0)
+                quant_pond = q * float(ponderacao) / 100.0
+
+            linhas.append(
+                {
+                    "serie": serie,
+                    "sistema": sistema,
+                    "conjunto": conjunto,
+                    "subconjunto": subconjunto,
+                    # Só mostra "Item" quando o nó é realmente Item (nivel==4)
+                    "item_nivel": item_nivel if nivel == 4 else "",
+                    "nivel": int(nivel),
+                    "componente": _fmt_codigo_nome(item.componente),
+                    "quantidade": float(item.quantidade or 0),
+                    "ponderacao": float(ponderacao),          # em %
+                    "quant_ponderada": float(quant_pond),
+                    "comentarios": getattr(item, "comentarios", "") or "",
+                }
+            )
+
+        return Response(linhas, status=200)
+
+
+
+class BOMFlatXLSXView(APIView):
+    def get(self, request, *args, **kwargs):
+        lista_id = request.GET.get("lista_id")
+        search = (request.GET.get("search") or "").strip()
+        detalhado = (request.GET.get("detalhado") or "").lower() in ("1","true","t","yes")
+
+        qs = BOM.objects.select_related("lista_pai","sublista","componente")
+        if not detalhado:
+            qs = qs.filter(componente__isnull=False)
+        if lista_id:
+            qs = qs.filter(lista_pai_id=lista_id)
+        if search:
+            qs = qs.filter(
+                Q(lista_pai__codigo__icontains=search) |
+                Q(lista_pai__nome__icontains=search) |
+                Q(sublista__codigo__icontains=search) |
+                Q(sublista__nome__icontains=search) |
+                Q(componente__codigo__icontains=search) |
+                Q(componente__nome__icontains=search) |
+                Q(comentarios__icontains=search)
+            )
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "BOM"
+
+        header = (["Série","Sistema","Conjunto","Subconjunto","Item"]
+                  if detalhado else
+                  ["Série","Sistema","Conjunto","Subconjunto"])
+        header += ["Componente","Quantidade","Ponderação","Quant. Ponderada","Comentários"]
+        ws.append(header)
+
+        for item in qs.order_by("lista_pai__codigo","id"):
+            no_ref = item.sublista or item.lista_pai
+            cadeia = _cadeia_desde_raiz(no_ref)
+            cols = ["","","","",""]
+            for i, nodo in enumerate(cadeia[:5]):
+                cols[i] = _fmt_codigo_nome(nodo)
+            serie, sistema, conjunto, subconjunto, item_nivel = cols
+            nivel = min(len(cadeia)-1, 4) if cadeia else 0
+
+            ponderacao = getattr(item,"ponderacao_operacao",100) or 100
+            q = float(item.quantidade or 0)
+            quant_pond = q * float(ponderacao) / 100.0
+
+            row = [serie, sistema, conjunto, subconjunto]
+            if detalhado:
+                row.append(item_nivel if nivel == 4 else "")
+            row += [
+                _fmt_codigo_nome(item.componente),
+                q,
+                f"{int(ponderacao)}%",
+                quant_pond,
+                getattr(item,"comentarios","") or "",
+            ]
+            ws.append(row)
+
+        for col in ws.columns:
+            max_len = max(len(str(c.value)) if c.value is not None else 0 for c in col)
+            ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len+2, 80)
+
+        response = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        response["Content-Disposition"] = 'attachment; filename="bom_planilha.xlsx"'
+        wb.save(response)  # escreve binário válido no HttpResponse
+        return response

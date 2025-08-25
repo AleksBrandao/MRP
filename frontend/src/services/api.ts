@@ -81,3 +81,8 @@ api.interceptors.request.use((config) => {
   console.log("🚀 Enviando para backend:", config.data);
   return config;
 });
+
+export const BOMFlatAPI = {
+  list: (params?: { lista_id?: number | string; search?: string }) =>
+    api.get("/bom-flat/", { params }),
+};

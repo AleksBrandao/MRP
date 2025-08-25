@@ -8,6 +8,7 @@ import HistoricoGeral from "./pages/HistoricoGeral";
 import DetalhesMRP from "./pages/DetalhesMRP";
 import ListasTecnicas from "./pages/ListasTecnicas";
 import Layout from "./components/Layout";
+import BOMPlanilha from "./pages/BOMPlanilha";
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/listas-tecnicas" element={<ListasTecnicas />} />
         <Route path="/ordens" element={<Ordens />} />
         <Route path="/bom" element={<BOM />} />
+        <Route path="/bom-planilha" element={<BOMPlanilha />} />
         <Route path="/mrp" element={<MrpResultado />} />
         <Route path="/historico" element={<HistoricoGeral />} />
         <Route path="/mrp-detalhado" element={<DetalhesMRP />} />

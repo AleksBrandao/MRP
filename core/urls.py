@@ -15,6 +15,8 @@ from .views import (
     ListaTecnicaViewSet,
 )
 
+from .views import BOMFlatView, BOMFlatXLSXView
+
 router = DefaultRouter()
 router.register(r'produtos', ProdutoViewSet)
 router.register(r'bom', BOMViewSet)  # 👈 ESSA LINHA PRECISA EXISTIR
@@ -23,6 +25,9 @@ router.register(r'componentes', ComponenteViewSet, basename='componente')
 router.register(r'listas-tecnicas', ListaTecnicaViewSet, basename='lista-tecnica')
 
 urlpatterns = [
+    path('api/bom-flat/', BOMFlatView.as_view(), name='bom-flat'),
+    path('api/bom-flat-xlsx/', BOMFlatXLSXView.as_view(), name='bom-flat-xlsx'),
+
     path('api/', include(router.urls)),
     # path('api/listas-tecnicas/', criar_lista_tecnica),  # sobrescreve o ViewSet, se houver
     path('api/mrp/', executar_mrp),
@@ -38,4 +43,5 @@ urlpatterns = [
     # # Histórico
     path('api/historico-produto/<int:produto_id>/', historico_produto),
     path('api/historico-todos/', historico_todos_os_produtos),
+    
 ]
