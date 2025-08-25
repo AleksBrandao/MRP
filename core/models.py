@@ -1,7 +1,6 @@
 from django.db import models
 from simple_history.models import HistoricalRecords
 from django.core.exceptions import ValidationError
-# from django.db.models import Q
 from decimal import Decimal, ROUND_HALF_UP
 from django.db.models import Q, CheckConstraint, F
 
@@ -37,7 +36,14 @@ class ListaTecnica(models.Model):
         ("SUBCONJUNTO", "Subconjunto"),
         ("ITEM", "Item"),
     ]
-    codigo = models.CharField(max_length=50, unique=True)
+    codigo = models.CharField(
+        max_length=50,
+        blank=True,           # <- não obrigatório
+        default="",           # <- default vazio
+        unique=False,         # <- remove unicidade isolada do código
+        db_index=True,        # ajuda nas buscas, opcional
+        editable=False,       # <- não aparece no admin por padrão
+    )
     nome = models.CharField(max_length=255)
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default="CONJUNTO")
     parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="filhos")
@@ -47,10 +53,20 @@ class ListaTecnica(models.Model):
     history = HistoricalRecords()
 
     class Meta:
-        ordering = ["codigo"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["nome", "tipo"], name="uniq_lista_tecnica_nome_tipo"
+            )
+        ]
 
-    def __str__(self):
-        return f"[{self.codigo}] {self.nome} ({self.tipo})"
+    def save(self, *args, **kwargs):
+        # 1º save para obter o PK
+        creating = self.pk is None
+        super().save(*args, **kwargs)
+        # se não tem código ainda, atribui um sequencial baseado no id
+        if creating and not self.codigo:
+            self.codigo = str(self.pk)          # ou f"LT-{self.pk}" se quiser prefixo
+            super().save(update_fields=["codigo"])
 
 class OrdemProducao(models.Model):
     lista = models.ForeignKey('ListaTecnica', on_delete=models.CASCADE,

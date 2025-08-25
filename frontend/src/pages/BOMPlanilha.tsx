@@ -3,18 +3,25 @@ import { useEffect, useState } from "react";
 import { BOMFlatAPI } from "../services/api";
 
 type LinhaFlat = {
-  serie: string;
-  sistema: string;
-  conjunto: string;
-  subconjunto: string;
-  item_nivel: string; // só vem preenchido se nivel === 4 (Item)
-  nivel: number;      // 0=Série, 1=Sistema, 2=Conjunto, 3=Subconjunto, 4=Item
-  componente: string;
+  // novos campos do endpoint
+  serie_nome?: string; sistema_nome?: string; conjunto_nome?: string;
+  subconjunto_nome?: string; item_nome?: string;
+
+  // legado (se ainda vier)
+  serie?: string; sistema?: string; conjunto?: string;
+  subconjunto?: string; item_nivel?: string;
+
+  // componente separado (novo) + legado
+  componente_codigo?: string | null;
+  componente_nome?: string | null;
+  componente?: string; // legado
+
   quantidade: number;
-  ponderacao: number;       // %
+  ponderacao: number;
   quant_ponderada: number;
   comentarios: string;
 };
+
 
 export default function BOMPlanilha() {
   const [linhas, setLinhas] = useState<LinhaFlat[]>([]);
@@ -51,6 +58,25 @@ export default function BOMPlanilha() {
   const fmt4 = (v: number) =>
     (v ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 
+  // helpers para compatibilidade quando só houver 'componente' (string única)
+  const getCompCodigo = (l: LinhaFlat) => {
+    if (l.componente_codigo) return l.componente_codigo;
+    if (l.componente && /^\s*\[([^\]]+)\]/.test(l.componente)) {
+      // extrai o que estiver entre colchetes no início, ex: "[ABC123] Nome do item"
+      const m = l.componente.match(/^\s*\[([^\]]+)\]/);
+      return m ? m[1] : "";
+    }
+    return "";
+  };
+  const getCompNome = (l: LinhaFlat) => {
+    if (l.componente_nome) return l.componente_nome;
+    if (l.componente) {
+      // remove prefixo "[...]" se existir
+      return l.componente.replace(/^\s*\[[^\]]+\]\s*/, "");
+    }
+    return "";
+  };
+
   const handleExportXLSX = async () => {
     try {
       const params = new URLSearchParams();
@@ -81,8 +107,9 @@ export default function BOMPlanilha() {
       "Sistema",
       "Conjunto",
       "Subconjunto",
-      "Item",         // sempre presente
-      "Componente",
+      "Item",                 // sempre presente
+      "Código",  // ✅ novo
+      "Componente",    // ✅ novo
       "Quantidade",
       "Ponderação",
       "Quant. Ponderada",
@@ -90,24 +117,25 @@ export default function BOMPlanilha() {
     ];
 
     const rows = linhas.map((l) => [
-      l.serie,
-      l.sistema,
-      l.conjunto,
-      l.subconjunto,
-      l.item_nivel || "", // vazio quando não for nível Item (ok)
-      l.componente,
+      l.serie_nome ?? l.serie ?? "",
+      l.sistema_nome ?? l.sistema ?? "",
+      l.conjunto_nome ?? l.conjunto ?? "",
+      l.subconjunto_nome ?? l.subconjunto ?? "",
+      l.item_nome ?? l.item_nivel ?? "",
+      getCompCodigo(l),
+      getCompNome(l),
       String(l.quantidade ?? 0),
       `${l.ponderacao ?? 0}%`,
       fmt4(l.quant_ponderada),
       (l.comentarios || "").replaceAll("\n", " "),
     ]);
-
     const csv = [header, ...rows]
       .map((r) =>
         r
           .map((v) => {
-            const needsQuotes = /[;"\n]/.test(v);
-            return needsQuotes ? `"${v.replaceAll('"', '""')}"` : v;
+            const s = String(v ?? "");
+            const needsQuotes = /[;"\n]/.test(s);
+            return needsQuotes ? `"${s.replaceAll('"', '""')}"` : s;
           })
           .join(";")
       )
@@ -129,7 +157,7 @@ export default function BOMPlanilha() {
           <h1 className="text-2xl font-bold">BOM (Formato Planilha)</h1>
           <p className="text-sm text-gray-500">
             Visualização achatada no padrão: Série, Sistema, Conjunto, Subconjunto, <b>Item</b>,
-            Componente, Quantidade, Ponderação, Quant. Ponderada, Comentários.
+            <b> Componente (Código, Nome)</b>, Quantidade, Ponderação, Quant. Ponderada, Comentários.
           </p>
         </div>
 
@@ -194,6 +222,8 @@ export default function BOMPlanilha() {
               <th className="px-4 py-3">Conjunto</th>
               <th className="px-4 py-3">Subconjunto</th>
               <th className="px-4 py-3">Item</th>
+              {/* 🔀 dividimos "Componente" em 2 */}
+              <th className="px-4 py-3">Código</th>
               <th className="px-4 py-3">Componente</th>
               <th className="px-4 py-3">Quantidade</th>
               <th className="px-4 py-3">Ponderação</th>
@@ -204,25 +234,29 @@ export default function BOMPlanilha() {
           <tbody>
             {loading ? (
               <tr>
-                <td className="px-4 py-4" colSpan={10}>
+                <td className="px-4 py-4" colSpan={11}>
                   Carregando…
                 </td>
               </tr>
             ) : linhas.length === 0 ? (
               <tr>
-                <td className="px-4 py-4" colSpan={10}>
+                <td className="px-4 py-4" colSpan={11}>
                   Nenhum registro.
                 </td>
               </tr>
             ) : (
               linhas.map((l, i) => (
                 <tr key={i} className="border-t align-top">
-                  <td className="px-4 py-3 whitespace-pre-line">{l.serie}</td>
-                  <td className="px-4 py-3 whitespace-pre-line">{l.sistema}</td>
-                  <td className="px-4 py-3 whitespace-pre-line">{l.conjunto}</td>
-                  <td className="px-4 py-3 whitespace-pre-line">{l.subconjunto}</td>
-                  <td className="px-4 py-3 whitespace-pre-line">{l.item_nivel || ""}</td>
-                  <td className="px-4 py-3 whitespace-pre-line">{l.componente}</td>
+                  <td className="px-4 py-3 whitespace-pre-line">{l.serie_nome ?? l.serie ?? ""}</td>
+                  <td className="px-4 py-3 whitespace-pre-line">{l.sistema_nome ?? l.sistema ?? ""}</td>
+                  <td className="px-4 py-3 whitespace-pre-line">{l.conjunto_nome ?? l.conjunto ?? ""}</td>
+                  <td className="px-4 py-3 whitespace-pre-line">{l.subconjunto_nome ?? l.subconjunto ?? ""}</td>
+                  <td className="px-4 py-3 whitespace-pre-line">{l.item_nome ?? l.item_nivel ?? ""}</td>
+
+                  {/* ✅ agora em duas colunas */}
+                  <td className="px-4 py-3">{getCompCodigo(l) || "—"}</td>
+                  <td className="px-4 py-3 whitespace-pre-line">{getCompNome(l)}</td>
+
                   <td className="px-4 py-3">{l.quantidade ?? 0}</td>
                   <td className="px-4 py-3">{`${l.ponderacao ?? 0}%`}</td>
                   <td className="px-4 py-3">{fmt4(l.quant_ponderada)}</td>

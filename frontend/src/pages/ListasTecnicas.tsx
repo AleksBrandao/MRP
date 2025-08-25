@@ -143,7 +143,7 @@ export default function ListasTecnicas() {
       <table className="w-full border-collapse">
         <thead>
           <tr className="text-left border-b">
-            <th className="py-2 px-2">Código</th>
+            {/* <th className="py-2 px-2">Código</th> */}
             <th className="py-2 px-2">Nome</th>
             <th className="py-2 px-2">Tipo</th>
             <th className="py-2 px-2">Observações</th>
@@ -153,7 +153,7 @@ export default function ListasTecnicas() {
         <tbody>
           {itens.map((i) => (
             <tr key={i.id} className="border-b">
-              <td className="py-2 px-2">{i.codigo}</td>
+              {/* <td className="py-2 px-2">{i.codigo}</td> */}
               <td className="py-2 px-2">{i.nome}</td>
               <td className="py-2 px-2">{i.tipo}</td>
               <td className="py-2 px-2">{i.observacoes}</td>

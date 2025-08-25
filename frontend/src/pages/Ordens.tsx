@@ -149,7 +149,7 @@ export default function Ordens() {
           {ordens.map((o) => (
             <tr key={o.id}>
               <td className="border px-4 py-2">
-                [{o.lista_codigo}] {o.lista_nome}
+                {o.lista_nome}
               </td>
               <td className="border px-4 py-2">{o.quantidade}</td>
               <td className="border px-4 py-2">

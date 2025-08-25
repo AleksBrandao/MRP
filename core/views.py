@@ -520,23 +520,29 @@ def _hierarquia(lista):
 
     return niveis
 
+def _codigo_nome(obj):
+    """
+    Retorna (codigo, nome) de um objeto com attrs 'codigo' e 'nome'.
+    Se obj for None, retorna ("", "").
+    """
+    if not obj:
+        return "", ""
+    return (getattr(obj, "codigo", "") or "").strip(), (getattr(obj, "nome", "") or "").strip()
+
 class BOMFlatView(APIView):
     """
-    GET /api/bom-flat/?lista_id=...&search=...
-    Retorna linhas em formato de planilha:
-    Série, Sistema, Conjunto, Subconjunto, Item (apenas se nivel==4),
-    Componente, Quantidade, Ponderação, Quant. Ponderada, Comentários, nivel.
+    GET /api/bom-flat/?lista_id=...&search=...&incluir_grupos=1
+    Retorna linhas em formato de planilha, agora com campos SEPARADOS:
+    <nivel>_codigo, <nivel>_nome, e componente_codigo / componente_nome.
     """
 
     def get(self, request, *args, **kwargs):
         lista_id = request.GET.get("lista_id")
         search = (request.GET.get("search") or "").strip()
 
-        # ⬇️ base
         qs = BOM.objects.select_related("lista_pai", "sublista", "componente")
 
-        # ⬇️ NOVO: por padrão, só traz linhas com componente
-        incluir_grupos = request.GET.get("incluir_grupos")  # "1"/"true" para incluir linhas só com sublista
+        incluir_grupos = request.GET.get("incluir_grupos")
         if not (incluir_grupos and incluir_grupos.lower() in ("1", "true", "t", "yes")):
             qs = qs.filter(componente__isnull=False)
 
@@ -556,48 +562,76 @@ class BOMFlatView(APIView):
 
         linhas = []
         for item in qs.order_by("lista_pai__codigo", "id"):
-            # Nó de referência da linha: se houver sublista use-a, senão a própria lista_pai
+            # nó de referência (como você já fazia)
             no_ref = item.sublista or item.lista_pai
 
-            # Cadeia raiz -> ... -> nó
+            # sobe árvore até a raiz (você já tem helper pra isso)
             cadeia = _cadeia_desde_raiz(no_ref)
 
-            # Mapeia posições 0..4 para Série, Sistema, Conjunto, Subconjunto, Item
-            cols = ["", "", "", "", ""]
+            # Preenche listas paralelas de códigos/nomes por nível
+            cods = ["", "", "", "", ""]
+            nomes = ["", "", "", "", ""]
             for i, nodo in enumerate(cadeia[:5]):
-                cols[i] = _fmt_codigo_nome(nodo)
+                cods[i], nomes[i] = _codigo_nome(nodo)
 
-            serie, sistema, conjunto, subconjunto, item_nivel = cols
+            serie_cod, sistema_cod, conjunto_cod, subconj_cod, item_cod = cods
+            serie_nom, sistema_nom, conjunto_nom, subconj_nom, item_nom = nomes
 
-            # nível do nó atual (0=Série, 1=Sistema, 2=Conjunto, 3=Subconjunto, 4=Item)
+            # nível atual (0..4)
             nivel = min(len(cadeia) - 1, 4) if cadeia else 0
 
-            # Ponderação (%). Se o campo não existir no modelo, cai para 100.
-            ponderacao = getattr(item, "ponderacao_operacao", 100) or 100
-
-            # Quantidade ponderada: usa campo pronto se existir; senão calcula.
+            # ponderação / quant_ponderada (mesma lógica sua)
+            ponderacao = (getattr(item, "ponderacao_operacao", 100) or 100)
+            q = float(item.quantidade or 0)
             if hasattr(item, "quant_ponderada") and item.quant_ponderada is not None:
                 quant_pond = float(item.quant_ponderada)
             else:
-                q = float(item.quantidade or 0)
                 quant_pond = q * float(ponderacao) / 100.0
 
-            linhas.append(
-                {
-                    "serie": serie,
-                    "sistema": sistema,
-                    "conjunto": conjunto,
-                    "subconjunto": subconjunto,
-                    # Só mostra "Item" quando o nó é realmente Item (nivel==4)
-                    "item_nivel": item_nivel if nivel == 4 else "",
-                    "nivel": int(nivel),
-                    "componente": _fmt_codigo_nome(item.componente),
-                    "quantidade": float(item.quantidade or 0),
-                    "ponderacao": float(ponderacao),          # em %
-                    "quant_ponderada": float(quant_pond),
-                    "comentarios": getattr(item, "comentarios", "") or "",
-                }
-            )
+            comp_cod, comp_nom = _codigo_nome(item.componente)
+
+            linha = {
+                # níveis separados (sem colchetes)
+                "serie_codigo": serie_cod,
+                "serie_nome":   serie_nom,
+                "sistema_codigo": sistema_cod,
+                "sistema_nome":   sistema_nom,
+                "conjunto_codigo": conjunto_cod,
+                "conjunto_nome":   conjunto_nom,
+                "subconjunto_codigo": subconj_cod,
+                "subconjunto_nome":   subconj_nom,
+                # Item só quando o nó é realmente item
+                "item_codigo": item_cod if nivel == 4 else "",
+                "item_nome":   item_nom if nivel == 4 else "",
+                "nivel": int(nivel),
+
+                # componente separado
+                "componente_codigo": comp_cod,
+                "componente_nome":   comp_nom,
+
+                # quantitativos
+                "quantidade": q,
+                "ponderacao": float(ponderacao),
+                "quant_ponderada": float(quant_pond),
+
+                # observações
+                "comentarios": getattr(item, "comentarios", "") or "",
+            }
+
+            # (opcional) manter legacy, se quiser compat com telas antigas:
+            # linha["serie"] = serie_nom
+            # linha["sistema"] = sistema_nom
+            # linha["conjunto"] = conjunto_nom
+            # linha["subconjunto"] = subconj_nom
+            # linha["item_nivel"] = item_nom if nivel == 4 else ""
+            # linha["componente"] = f"[{comp_cod}] {comp_nom}".strip() if comp_cod else comp_nom
+
+            linhas.append(linha)
+
+        # Se você já criou o BOMFlatRowSerializer, pode validar antes de responder:
+        # from .serializers import BOMFlatRowSerializer
+        # data = BOMFlatRowSerializer(linhas, many=True).data
+        # return Response(data, status=200)
 
         return Response(linhas, status=200)
 
@@ -629,30 +663,39 @@ class BOMFlatXLSXView(APIView):
         ws = wb.active
         ws.title = "BOM"
 
+        # Cabeçalho: níveis por NOME e Componente separado em Código + Nome
         header = (["Série","Sistema","Conjunto","Subconjunto","Item"]
                   if detalhado else
                   ["Série","Sistema","Conjunto","Subconjunto"])
-        header += ["Componente","Quantidade","Ponderação","Quant. Ponderada","Comentários"]
+        header += ["Código","Componente","Quantidade","Ponderação","Quant. Ponderada","Comentários"]
         ws.append(header)
 
         for item in qs.order_by("lista_pai__codigo","id"):
             no_ref = item.sublista or item.lista_pai
-            cadeia = _cadeia_desde_raiz(no_ref)
-            cols = ["","","","",""]
+            cadeia = _cadeia_desde_raiz(no_ref)  # RAIZ -> ... -> nó
+            # Extrai NOMES (sem colchetes) para os níveis
+            nomes = ["","","","",""]
             for i, nodo in enumerate(cadeia[:5]):
-                cols[i] = _fmt_codigo_nome(nodo)
-            serie, sistema, conjunto, subconjunto, item_nivel = cols
+                _, nome = _codigo_nome(nodo)  # <- usa helper que retorna (codigo, nome)
+                nomes[i] = nome
+            serie_nome, sistema_nome, conjunto_nome, subconjunto_nome, item_nome = nomes
+
             nivel = min(len(cadeia)-1, 4) if cadeia else 0
 
+            # Ponderação / quant. ponderada
             ponderacao = getattr(item,"ponderacao_operacao",100) or 100
             q = float(item.quantidade or 0)
             quant_pond = q * float(ponderacao) / 100.0
 
-            row = [serie, sistema, conjunto, subconjunto]
+            # Componente separado
+            comp_cod, comp_nom = _codigo_nome(item.componente)
+
+            row = [serie_nome, sistema_nome, conjunto_nome, subconjunto_nome]
             if detalhado:
-                row.append(item_nivel if nivel == 4 else "")
+                row.append(item_nome if nivel == 4 else "")
             row += [
-                _fmt_codigo_nome(item.componente),
+                comp_cod,
+                comp_nom,
                 q,
                 f"{int(ponderacao)}%",
                 quant_pond,
@@ -660,13 +703,14 @@ class BOMFlatXLSXView(APIView):
             ]
             ws.append(row)
 
+        # Largura automática (limitada)
         for col in ws.columns:
             max_len = max(len(str(c.value)) if c.value is not None else 0 for c in col)
-            ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len+2, 80)
+            ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 2, 80)
 
         response = HttpResponse(
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
         response["Content-Disposition"] = 'attachment; filename="bom_planilha.xlsx"'
-        wb.save(response)  # escreve binário válido no HttpResponse
+        wb.save(response)
         return response
