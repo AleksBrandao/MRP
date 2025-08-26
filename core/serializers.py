@@ -11,6 +11,25 @@ class ProdutoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Produto
         fields = "__all__"
+        extra_kwargs = {
+            "codigo": {"required": False, "allow_null": True, "allow_blank": True}
+        }
+
+    def validate_codigo(self, value):
+        # transforma "" em None para não bater no unique
+        if isinstance(value, str) and value.strip() == "":
+            return None
+        return value
+
+    def create(self, validated_data):
+        if validated_data.get("codigo", None) == "":
+            validated_data["codigo"] = None
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        if validated_data.get("codigo", None) == "":
+            validated_data["codigo"] = None
+        return super().update(instance, validated_data)
 
 
 class ListaTecnicaSerializer(serializers.ModelSerializer):

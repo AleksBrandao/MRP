@@ -106,7 +106,7 @@ def calcular_necessidades(lista, quantidade, necessidades, nivel=0, codigo_pai=N
         if comp.id not in necessidades:
             necessidades[comp.id] = {
                 "codigo": comp.codigo,
-                "nome": comp.nome,
+                "nome": _fmt_codigo_nome(comp or item.sublista),
                 "necessario": necessidade_total,
                 "em_estoque": estoque_atual,
                 "faltando": necessidade_liquida,
@@ -163,10 +163,13 @@ def calcular_mrp_recursivo():
 
 @api_view(['GET'])
 def executar_mrp(request):
-    necessidades = {}
-    for op in OrdemProducao.objects.all().select_related('lista'):
+    necessidades = {}  # ← usar dict com chave combinada
+    for op in OrdemProducao.objects.select_related("lista"):
         explodir_lista(op.lista, Decimal(op.quantidade), necessidades, nivel=0, codigo_pai=op.lista.codigo)
-    return Response(list(necessidades.values()))
+
+    # Transformar em lista no final
+    resultado = list(necessidades.values())
+    return Response(resultado)
 
 @api_view(["GET"])
 def exportar_mrp_csv(request):
@@ -345,7 +348,7 @@ def adicionar_detalhes_recursivo(lista_id, multiplicador, acumulado, vistos, ord
         qtd_total = (rel.quantidade or 0) * (multiplicador or 1)
 
         if comp:
-            key = comp.id
+            key = comp.codigo or comp.nome or comp.id
             if key not in acumulado:
                 acumulado[key] = {
                     "produto_id": comp.id,
@@ -432,34 +435,40 @@ def historico_todos_os_produtos(request):
         })
     return Response(out, status=status.HTTP_200_OK)
 
-def explodir_lista(lista: ListaTecnica, fator: Decimal, necessidades: dict, nivel: int, codigo_pai: str):
-    itens = BOM.objects.filter(lista_pai=lista).select_related('componente', 'sublista')
-    for item in itens:
-        mult = fator * item.quantidade
-
+def explodir_lista(lista, quantidade_base, necessidades, nivel=0, codigo_pai=None):
+    for item in BOM.objects.filter(lista_pai=lista).select_related("componente", "sublista"):
         if item.componente:
-            comp = item.componente
-            estoque_atual = comp.estoque or 0
-            necessario = Decimal(mult)
-            faltando = max(Decimal(0), necessario - estoque_atual)
+            # Validar ponderação
+            ponderacao = Decimal(item.ponderacao_operacao or 100)
 
-            acum = necessidades.setdefault(comp.id, {
-                "codigo": comp.codigo,
-                "nome": comp.nome,
-                "tipo": comp.tipo,  # "componente" ou "materia_prima"
-                "necessario": Decimal(0),
-                "em_estoque": Decimal(0),
-                "faltando": Decimal(0),
-                "lead_time": comp.lead_time,
-                "nivel": nivel,
-                "codigo_pai": codigo_pai,
-            })
-            acum["necessario"] += necessario
-            acum["em_estoque"] = estoque_atual  # pode somar se quiser considerar múltiplas linhas
-            acum["faltando"] = max(Decimal(0), acum["necessario"] - estoque_atual)
+            # Calcular quantidade ponderada
+            quant_ponderada = item.quantidade * ponderacao / Decimal(100)
+            quant_ponderada *= quantidade_base
+
+            componente = item.componente
+            chave = f"{componente.codigo or 'NULL'}||{componente.nome}"
+
+            if chave not in necessidades:
+                estoque_atual = componente.estoque if componente.estoque is not None else 0
+                faltando = max(quant_ponderada - estoque_atual, 0)
+
+                necessidades[chave] = {
+                    "componente_id": componente.id,
+                    "codigo": componente.codigo,
+                    "nome": componente.nome,
+                    "necessario": quant_ponderada,
+                    "estoque": estoque_atual,
+                    "faltando": faltando,
+                    "lead_time": componente.lead_time,
+                    "tipo": componente.tipo,
+                }
+            else:
+                necessidades[chave]["necessario"] += quant_ponderada
+                faltando = max(necessidades[chave]["necessario"] - necessidades[chave]["estoque"], 0)
+                necessidades[chave]["faltando"] = faltando
 
         elif item.sublista:
-            explodir_lista(item.sublista, mult, necessidades, nivel + 1, codigo_pai=lista.codigo)
+            explodir_lista(item.sublista, quantidade_base * item.quantidade, necessidades, nivel + 1, codigo_pai=lista.codigo)
 
 # --- helper para montar "[CODIGO] NOME" com segurança ---
 def _fmt_codigo_nome(obj):
@@ -580,12 +589,13 @@ class BOMFlatView(APIView):
             # nível atual (0..4)
             nivel = min(len(cadeia) - 1, 4) if cadeia else 0
 
-            # ponderação / quant_ponderada (mesma lógica sua)
-            ponderacao = (getattr(item, "ponderacao_operacao", 100) or 100)
+            raw = getattr(item, "ponderacao_operacao", None)
+            ponderacao = 100 if raw is None else float(raw)
             q = float(item.quantidade or 0)
             if hasattr(item, "quant_ponderada") and item.quant_ponderada is not None:
                 quant_pond = float(item.quant_ponderada)
             else:
+                q = float(item.quantidade or 0)
                 quant_pond = q * float(ponderacao) / 100.0
 
             comp_cod, comp_nom = _codigo_nome(item.componente)
@@ -670,38 +680,48 @@ class BOMFlatXLSXView(APIView):
         header += ["Código","Componente","Quantidade","Ponderação","Quant. Ponderada","Comentários"]
         ws.append(header)
 
-        for item in qs.order_by("lista_pai__codigo","id"):
+        for item in qs.order_by("lista_pai__codigo", "id"):
             no_ref = item.sublista or item.lista_pai
             cadeia = _cadeia_desde_raiz(no_ref)  # RAIZ -> ... -> nó
+
             # Extrai NOMES (sem colchetes) para os níveis
-            nomes = ["","","","",""]
+            nomes = ["", "", "", "", ""]
             for i, nodo in enumerate(cadeia[:5]):
-                _, nome = _codigo_nome(nodo)  # <- usa helper que retorna (codigo, nome)
+                _, nome = _codigo_nome(nodo)  # helper retorna (codigo, nome)
                 nomes[i] = nome
+
             serie_nome, sistema_nome, conjunto_nome, subconjunto_nome, item_nome = nomes
+            nivel = min(len(cadeia) - 1, 4) if cadeia else 0
 
-            nivel = min(len(cadeia)-1, 4) if cadeia else 0
+            # Ponderação: respeita 0; default 100 apenas se None/ausente
+            raw = getattr(item, "ponderacao_operacao", None)
+            ponderacao = 100 if raw is None else float(raw)
 
-            # Ponderação / quant. ponderada
-            ponderacao = getattr(item,"ponderacao_operacao",100) or 100
+            # Quantidade / Quantidade ponderada
             q = float(item.quantidade or 0)
-            quant_pond = q * float(ponderacao) / 100.0
+            if getattr(item, "quant_ponderada", None) is not None:
+                quant_pond = float(item.quant_ponderada)
+            else:
+                quant_pond = q * ponderacao / 100.0
 
-            # Componente separado
+            # Componente separado (Código + Nome)
             comp_cod, comp_nom = _codigo_nome(item.componente)
 
+            # Monta a linha conforme o cabeçalho
             row = [serie_nome, sistema_nome, conjunto_nome, subconjunto_nome]
             if detalhado:
                 row.append(item_nome if nivel == 4 else "")
             row += [
-                comp_cod,
-                comp_nom,
-                q,
-                f"{int(ponderacao)}%",
-                quant_pond,
-                getattr(item,"comentarios","") or "",
+                comp_cod,                 # "Código"
+                comp_nom,                 # "Componente"
+                q,                        # "Quantidade"
+                f"{int(ponderacao)}%",    # "Ponderação"
+                quant_pond,               # "Quant. Ponderada"
+                getattr(item, "comentarios", "") or "",
             ]
+
             ws.append(row)
+
 
         # Largura automática (limitada)
         for col in ws.columns:

@@ -12,7 +12,12 @@ class Produto(models.Model):
         ("componente", "Componente"),
         ("materia_prima", "Matéria-Prima"),
     ]
-    codigo = models.CharField(max_length=50, unique=True)
+    codigo = models.CharField(
+    max_length=50,
+    unique=True,
+    null=True,      # <- permite gravar como NULL
+    blank=True      # <- formulário/admin podem deixar em branco
+    )
     nome = models.CharField(max_length=255)
     fabricante = models.CharField(max_length=255, blank=True, default="")
     codigo_fabricante = models.CharField(max_length=255, blank=True, default="")

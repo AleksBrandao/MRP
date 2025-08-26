@@ -4,7 +4,7 @@ import { ComponenteAPI } from "../services/api";
 
 export type Componente = {
   id?: number;
-  codigo: string;
+  codigo?: string;                 // <- agora opcional
   nome: string;
   fabricante?: string;
   codigo_fabricante?: string;
@@ -16,7 +16,7 @@ export type Componente = {
 
 type Props = {
   onClose: () => void;
-  onSaved: (saved: Componente) => void;     // ⬅️ devolve o objeto salvo
+  onSaved: (saved: Componente) => void;
   initialData?: Componente;
 };
 
@@ -47,11 +47,27 @@ export default function CadastrarComponente({ onClose, onSaved, initialData }: P
     setErro(null);
     setSaving(true);
     try {
-      const resp = initialData?.id
-        ? await ComponenteAPI.update(initialData.id, { ...form, tipo: "componente" })
-        : await ComponenteAPI.create({ ...form, tipo: "componente" });
+      // monta payload SEM enviar codigo vazio
+      const basePayload: any = {
+        nome: (form.nome ?? "").trim(),
+        fabricante: form.fabricante?.trim() ?? "",
+        codigo_fabricante: form.codigo_fabricante?.trim() ?? "",
+        unidade: form.unidade?.trim() ?? "",
+        estoque: Number(form.estoque) || 0,
+        lead_time: Number(form.lead_time) || 0,
+        tipo: "componente",
+      };
 
-      onSaved(resp.data);      // ⬅️ atualiza lista no pai
+      const payload =
+        form.codigo && form.codigo.trim() !== ""
+          ? { ...basePayload, codigo: form.codigo.trim() }
+          : basePayload; // <- não inclui 'codigo' se vazio
+
+      const resp = initialData?.id
+        ? await ComponenteAPI.update(initialData.id, payload)
+        : await ComponenteAPI.create(payload);
+
+      onSaved(resp.data);
     } catch (err: any) {
       const detail =
         err?.response?.data ? JSON.stringify(err.response.data) : err?.message || "Erro ao salvar.";
@@ -77,14 +93,13 @@ export default function CadastrarComponente({ onClose, onSaved, initialData }: P
         </button>
       </div>
 
-      {/* Form em 2 colunas, labels acima, inputs com borda arredondada */}
+      {/* Form em 2 colunas */}
       <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
         <div>
-          <label className="mb-1 block text-sm text-gray-600">Código</label>
+          <label className="mb-1 block text-sm text-gray-600">Código (opcional)</label>
           <input
-            value={form.codigo}
+            value={form.codigo ?? ""}                     // <- aceita vazio
             onChange={(e) => set("codigo", e.target.value)}
-            required
             className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
             placeholder="ex: CH47610301M02"
           />

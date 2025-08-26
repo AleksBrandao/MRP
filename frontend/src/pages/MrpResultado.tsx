@@ -79,7 +79,7 @@ export default function MrpResultado() {
     };
 
     const linhaAtual = (
-      <tr key={item.codigo}>
+      <tr key={`mrp-${item.codigo ?? `${item.nome}-${nivel}-${Math.random().toString(36).slice(2, 8)}`}`}>
         <td className="border px-4 py-2">{item.codigo}</td>
         <td className="border px-4 py-2">
           <div
@@ -116,7 +116,8 @@ export default function MrpResultado() {
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Resultado do Cálculo MRP</h1>
       <a
-        href="http://localhost:8000/api/mrp/excel/"
+        // href="http://localhost:8000/api/mrp/excel/"
+        href={`${import.meta.env.VITE_API_URL}/mrp/excel/`}
         className="inline-block bg-green-600 text-white px-4 py-2 rounded mb-4"
         target="_blank"
         rel="noopener noreferrer"

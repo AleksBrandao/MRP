@@ -4,7 +4,7 @@ import { ListaTecnicaAPI } from "../services/api";
 
 type LT = {
   id: number;
-  codigo: string;
+  codigo?: string | null; // <- pode ser opcional nulo
   nome: string;
   tipo: "SERIE" | "SISTEMA" | "CONJUNTO" | "SUBCONJUNTO" | "ITEM";
   observacoes?: string;
@@ -40,30 +40,38 @@ export default function ListasTecnicas() {
     setItens(r.data);
   };
 
-  useEffect(() => { carregar(); }, []);
+  useEffect(() => {
+    carregar();
+  }, []);
 
   // Filtra pais compatíveis: pai deve ser exatamente o nível anterior
   const paisValidos = useMemo(() => {
     const idx = ORDEM.indexOf(form.tipo);
     const tipoPaiEsperado = idx > 0 ? ORDEM[idx - 1] : null;
-    return tipoPaiEsperado
-      ? itens.filter((i) => i.tipo === tipoPaiEsperado)
-      : [];
+    return tipoPaiEsperado ? itens.filter((i) => i.tipo === tipoPaiEsperado) : [];
   }, [form.tipo, itens]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const payload: any = { ...form };
-      // parent null quando não aplicável (ex.: SERIE não tem pai)
-      if (!form.parent) payload.parent = null;
+      // monta payload SEM enviar codigo vazio
+      const base: any = {
+        nome: (form.nome ?? "").trim(),
+        tipo: form.tipo,
+        observacoes: form.observacoes?.trim() ?? "",
+        parent: form.parent ? Number(form.parent) : null,
+      };
+      const payload = form.codigo && form.codigo.trim() !== ""
+        ? { ...base, codigo: form.codigo.trim() }
+        : base;
 
       if (editId) {
         await ListaTecnicaAPI.update(editId, payload);
       } else {
         await ListaTecnicaAPI.create(payload);
       }
+
       setForm({ codigo: "", nome: "", tipo: "SERIE", observacoes: "", parent: null });
       setEditId(null);
       await carregar();
@@ -85,7 +93,7 @@ export default function ListasTecnicas() {
   const startEdit = (i: LT) => {
     setEditId(i.id);
     setForm({
-      codigo: i.codigo,
+      codigo: i.codigo ?? "", // <- garante string para input controlado
       nome: i.nome,
       tipo: i.tipo,
       observacoes: i.observacoes || "",
@@ -93,49 +101,73 @@ export default function ListasTecnicas() {
     });
   };
 
+  // helper para exibir rótulo do pai sem "[] " quando não há código
+  const labelPai = (p: LT) =>
+    (p.codigo && String(p.codigo).trim() !== "" ? `[${p.codigo}] ` : "") + `${p.nome} — ${p.tipo}`;
+
   return (
     <div className="max-w-3xl mx-auto py-6 px-4">
       <h1 className="text-3xl font-semibold mb-4">Listas Técnicas</h1>
 
       <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-3 mb-4">
-        <input className="border rounded px-3 py-2" placeholder="Código"
-          value={form.codigo} onChange={(e) => setForm({ ...form, codigo: e.target.value })}/>
-        <input className="border rounded px-3 py-2" placeholder="Nome"
-          value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })}/>
+        <input
+          className="border rounded px-3 py-2"
+          placeholder="Código (opcional)"
+          value={form.codigo ?? ""} // <- aceita vazio
+          onChange={(e) => setForm({ ...form, codigo: e.target.value })}
+        />
+        <input
+          className="border rounded px-3 py-2"
+          placeholder="Nome"
+          value={form.nome}
+          onChange={(e) => setForm({ ...form, nome: e.target.value })}
+          required
+        />
 
-        <select className="border rounded px-3 py-2"
+        <select
+          className="border rounded px-3 py-2"
           value={form.tipo}
           onChange={(e) => {
             const novoTipo = e.target.value as LT["tipo"];
             // ao mudar tipo, zera o parent se ficar inválido
             setForm((f) => ({ ...f, tipo: novoTipo, parent: null }));
-          }}>
+          }}
+        >
           {TIPOS.map((t) => (
-            <option key={t.value} value={t.value}>{t.label}</option>
+            <option key={t.value} value={t.value}>
+              {t.label}
+            </option>
           ))}
         </select>
 
-        <input className="border rounded px-3 py-2" placeholder="Observações"
-          value={form.observacoes} onChange={(e) => setForm({ ...form, observacoes: e.target.value })}/>
+        <input
+          className="border rounded px-3 py-2"
+          placeholder="Observações"
+          value={form.observacoes}
+          onChange={(e) => setForm({ ...form, observacoes: e.target.value })}
+        />
 
         {/* Parent: só aparece quando tipo NÃO é SERIE */}
         {form.tipo !== "SERIE" && (
-          <select className="border rounded px-3 py-2 col-span-2"
+          <select
+            className="border rounded px-3 py-2 col-span-2"
             value={form.parent ?? ""}
             onChange={(e) =>
               setForm({ ...form, parent: e.target.value ? Number(e.target.value) : null })
-            }>
-            <option value="">(Selecione o {TIPOS[ORDEM.indexOf(form.tipo) - 1].label})</option>
+            }
+          >
+            <option value="">
+              (Selecione o {TIPOS[ORDEM.indexOf(form.tipo) - 1].label})
+            </option>
             {paisValidos.map((p) => (
               <option key={p.id} value={p.id}>
-                [{p.codigo}] {p.nome} — {p.tipo}
+                {labelPai(p)}
               </option>
             ))}
           </select>
         )}
 
-        <button disabled={loading}
-          className="bg-blue-600 text-white rounded px-4 py-2">
+        <button disabled={loading} className="bg-blue-600 text-white rounded px-4 py-2">
           {editId ? "Salvar" : "Adicionar"}
         </button>
       </form>
@@ -158,13 +190,20 @@ export default function ListasTecnicas() {
               <td className="py-2 px-2">{i.tipo}</td>
               <td className="py-2 px-2">{i.observacoes}</td>
               <td className="py-2 px-2">
-                <button className="text-blue-600 mr-3" onClick={() => startEdit(i)}>Editar</button>
-                <button className="text-red-600" onClick={async () => {
-                  if (confirm("Excluir esse registro?")) {
-                    await ListaTecnicaAPI.remove(i.id);
-                    await carregar();
-                  }
-                }}>Excluir</button>
+                <button className="text-blue-600 mr-3" onClick={() => startEdit(i)}>
+                  Editar
+                </button>
+                <button
+                  className="text-red-600"
+                  onClick={async () => {
+                    if (confirm("Excluir esse registro?")) {
+                      await ListaTecnicaAPI.remove(i.id);
+                      await carregar();
+                    }
+                  }}
+                >
+                  Excluir
+                </button>
               </td>
             </tr>
           ))}
