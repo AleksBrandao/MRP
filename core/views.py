@@ -163,26 +163,35 @@ def calcular_mrp_recursivo():
 
 @api_view(['GET'])
 def executar_mrp(request):
-    necessidades = {}  # ← usar dict com chave combinada
+    necessidades = {}
     for op in OrdemProducao.objects.select_related("lista"):
         explodir_lista(op.lista, Decimal(op.quantidade), necessidades, nivel=0, codigo_pai=op.lista.codigo)
+    return Response(list(necessidades.values()))
 
-    # Transformar em lista no final
-    resultado = list(necessidades.values())
-    return Response(resultado)
 
 @api_view(["GET"])
 def exportar_mrp_csv(request):
+    resultado = {}
+    for ordem in OrdemProducao.objects.select_related("lista"):
+        lista = _resolver_lista_da_ordem(ordem)
+        if not lista:
+            continue
+        adicionar_detalhes_recursivo(
+            lista_id=lista.id,
+            multiplicador=ordem.quantidade,
+            acumulado=resultado,
+            vistos=set(),
+            ordem_id=ordem.id,
+            lista_final_nome=lista.nome,
+        )
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="resultado_mrp.csv"'
-
     writer = csv.writer(response)
     writer.writerow(["Produto", "Necessidade"])
-
-    for item in calcular_mrp_recursivo():
-        writer.writerow([item["nome"], item["necessario"]])
-
+    for comp in resultado.values():
+        writer.writerow([comp["nome"], comp["necessario"]])
     return response
+
 
 
 @api_view(["GET"])
@@ -253,7 +262,7 @@ def exportar_mrp_excel(request):
                     d.get("qtd_produto", "—"),
                     d.get("qtd_componente_por_unidade", "—"),
                     d["qtd_necessaria"],
-                    f"{comp.get('codigo_componente', '—')} - {comp.get('nome_componente', '—')}",
+                    f"{comp.get('codigo', '—')} - {comp.get('nome', '—')}",
                     data,
                     estoque_disponivel,
                     faltando,
@@ -306,7 +315,7 @@ def mrp_detalhado(request):
     # Fallback: cria detalhe genérico se houver necessidade sem detalhes
     for item in resultado.values():
         necessidade = int(item.get("necessario", 0))
-        estoque = int(item.get("estoque", 0))
+        estoque = int(item.get("em_estoque", 0))
         faltando = max(0, necessidade - estoque)
         detalhes = item.get("detalhes", [])
 
@@ -327,15 +336,9 @@ def mrp_detalhado(request):
     return Response(list(resultado.values()), status=status.HTTP_200_OK)
 
 
-def adicionar_detalhes_recursivo(lista_id, multiplicador, acumulado, vistos, ordem_id=None, lista_final_nome=None, nivel=0):
-    """
-    Expande a BOM a partir de uma lista_pai (id), multiplicando as quantidades
-    e acumulando por componente, com detalhamento por OP e lista.
-    """
-    if lista_id in vistos:
-        return  # evita ciclos
-    vistos.add(lista_id)
-
+def adicionar_detalhes_recursivo(
+    lista_id, multiplicador, acumulado, vistos, ordem_id, lista_final_nome, nivel=0
+):
     relacoes = (
         BOM.objects
         .filter(lista_pai_id=lista_id)
@@ -345,34 +348,52 @@ def adicionar_detalhes_recursivo(lista_id, multiplicador, acumulado, vistos, ord
     for rel in relacoes:
         comp = rel.componente
         sublista = rel.sublista
-        qtd_total = (rel.quantidade or 0) * (multiplicador or 1)
+
+        # aplica ponderação por UNIDADE (None -> 100, 0 -> 0)
+        p_raw = rel.ponderacao_operacao
+        p = Decimal(100 if p_raw is None else p_raw)
+        qpond_unidade = (Decimal(rel.quantidade or 0) * p) / Decimal(100)
+
+        # se 0%, não propaga e não gera linha
+        if qpond_unidade == 0:
+            continue
+
+        qtd_total = qpond_unidade * (Decimal(multiplicador or 1))
 
         if comp:
-            key = comp.codigo or comp.nome or comp.id
-            if key not in acumulado:
-                acumulado[key] = {
-                    "produto_id": comp.id,
-                    "codigo_componente": getattr(comp, "codigo", ""),
-                    "nome_componente": getattr(comp, "nome", ""),
-                    "necessario": 0,
-                    "em_estoque": getattr(comp, "estoque", 0),
-                    "faltando": 0,
-                    "lead_time": getattr(comp, "lead_time", 0),
+            comp_id = comp.id  # CHAVE ÚNICA, SEMPRE POR ID
+
+            if comp_id not in acumulado:
+                acumulado[comp_id] = {
+                    "id": comp_id,                                # 👈 adicionado
+                    "produto_id": comp_id,
+                    "codigo": (getattr(comp, "codigo", "") or ""),
+                    "nome": (getattr(comp, "nome", "") or ""),
+                    "necessario": Decimal(0),
+                    "em_estoque": Decimal(getattr(comp, "estoque", 0) or 0),
+                    "faltando": Decimal(0),
+                    "lead_time": int(getattr(comp, "lead_time", 0) or 0),
                     "detalhes": [],
                 }
 
-            acumulado[key]["necessario"] += qtd_total
-            acumulado[key]["faltando"] = max(0, acumulado[key]["necessario"] - acumulado[key]["em_estoque"])
+            acumulado[comp_id]["necessario"] += qtd_total
+            acumulado[comp_id]["faltando"] = max(
+                Decimal(0),
+                acumulado[comp_id]["necessario"] - acumulado[comp_id]["em_estoque"],
+            )
 
-            acumulado[key]["detalhes"].append({
+            acumulado[comp_id]["detalhes"].append({
                 "ordem_producao": ordem_id,
                 "produto_final": lista_final_nome,
                 "qtd_produto": multiplicador,
-                "qtd_componente_por_unidade": rel.quantidade,
+                # quantidade POR UNIDADE já ponderada
+                "qtd_componente_por_unidade": qpond_unidade,
                 "qtd_necessaria": qtd_total,
             })
 
+
         elif sublista:
+            # desce usando a QUANTIDADE PONDERADA como multiplicador
             adicionar_detalhes_recursivo(
                 lista_id=sublista.id,
                 multiplicador=qtd_total,
@@ -382,9 +403,6 @@ def adicionar_detalhes_recursivo(lista_id, multiplicador, acumulado, vistos, ord
                 lista_final_nome=lista_final_nome,
                 nivel=nivel + 1,
             )
-
-
-
 
 @api_view(["POST"])
 def criar_lista_tecnica(request):
@@ -437,38 +455,49 @@ def historico_todos_os_produtos(request):
 
 def explodir_lista(lista, quantidade_base, necessidades, nivel=0, codigo_pai=None):
     for item in BOM.objects.filter(lista_pai=lista).select_related("componente", "sublista"):
+        # Ponderação correta (None→100, 0→0)
+        p_raw = item.ponderacao_operacao
+        ponderacao = Decimal(100 if p_raw is None else p_raw)
+        qpond_unidade = (Decimal(item.quantidade or 0) * ponderacao) / Decimal(100)
+
+        if qpond_unidade == 0:
+            continue
+
         if item.componente:
-            # Validar ponderação
-            ponderacao = Decimal(item.ponderacao_operacao or 100)
+            comp = item.componente
+            comp_id = comp.id                                  # <<<<<<<<<< CHAVE ÚNICA
+            quant_ponderada = qpond_unidade * Decimal(quantidade_base)
 
-            # Calcular quantidade ponderada
-            quant_ponderada = item.quantidade * ponderacao / Decimal(100)
-            quant_ponderada *= quantidade_base
+            em_estoque = Decimal(comp.estoque or 0)
+            atual = Decimal(necessidades.get(comp_id, {}).get("necessario", 0))
+            novo_necessario = atual + quant_ponderada
+            faltando = max(Decimal(0), novo_necessario - em_estoque)
 
-            componente = item.componente
-            chave = f"{componente.codigo or 'NULL'}||{componente.nome}"
-
-            if chave not in necessidades:
-                estoque_atual = componente.estoque if componente.estoque is not None else 0
-                faltando = max(quant_ponderada - estoque_atual, 0)
-
-                necessidades[chave] = {
-                    "componente_id": componente.id,
-                    "codigo": componente.codigo,
-                    "nome": componente.nome,
-                    "necessario": quant_ponderada,
-                    "estoque": estoque_atual,
-                    "faltando": faltando,
-                    "lead_time": componente.lead_time,
-                    "tipo": componente.tipo,
-                }
-            else:
-                necessidades[chave]["necessario"] += quant_ponderada
-                faltando = max(necessidades[chave]["necessario"] - necessidades[chave]["estoque"], 0)
-                necessidades[chave]["faltando"] = faltando
+            necessidades[comp_id] = {
+                "id": comp_id,                                  # <<<<< mande o ID pro front
+                "codigo": comp.codigo or "",                    # pode ser vazio
+                "nome": comp.nome or "",
+                "necessario": float(novo_necessario),
+                "em_estoque": float(em_estoque),
+                "faltando": float(faltando),
+                "lead_time": int(getattr(comp, "lead_time", 0) or 0),
+                "data_compra": "",
+                "nivel": nivel,
+                "codigo_pai": codigo_pai,
+                "tipo": getattr(comp, "tipo", "componente"),
+            }
 
         elif item.sublista:
-            explodir_lista(item.sublista, quantidade_base * item.quantidade, necessidades, nivel + 1, codigo_pai=lista.codigo)
+            explodir_lista(
+                item.sublista,
+                Decimal(quantidade_base) * qpond_unidade,
+                necessidades,
+                nivel + 1,
+                codigo_pai=lista.codigo,
+            )
+
+
+
 
 # --- helper para montar "[CODIGO] NOME" com segurança ---
 def _fmt_codigo_nome(obj):

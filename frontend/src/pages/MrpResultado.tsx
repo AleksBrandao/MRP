@@ -2,59 +2,30 @@ import { useEffect, useState } from "react";
 import api from "../services/http";
 
 interface ResultadoMRP {
+  id: number;                // ✅ backend já envia
   codigo: string;
   nome: string;
   necessario: number;
-  em_estoque: number;mrp_detalhado
+  em_estoque: number;
   faltando: number;
   lead_time: number;
   data_compra: string;
   nivel: number;
-  codigo_pai: string | null;
-  tipo: string; // novo campo
-}
-
-interface ResultadoMRPComFilhos extends ResultadoMRP {
-  filhos?: ResultadoMRPComFilhos[];
-  expandido?: boolean;
-}
-
-function getTipoLabel(tipo: string) {
-  switch (tipo) {
-    case "componente": return "Componente";
-    case "materia_prima": return "Matéria-Prima";
-    case "lista": return "Lista Técnica (BOM)";
-    default: return tipo;
-  }
+  codigo_pai: string | null; // é o código da LISTA (não do componente pai)
+  tipo: string;              // "componente" | "materia_prima" | "lista"...
 }
 
 export default function MrpResultado() {
-  const [dados, setDados] = useState<ResultadoMRPComFilhos[]>([]);
+  const [dados, setDados] = useState<ResultadoMRP[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtroTipo, setFiltroTipo] = useState<string>("");
 
   useEffect(() => {
     api.get("/mrp/")
       .then((res) => {
-        const itens = (res.data as ResultadoMRP[]).sort((a, b) =>
-          a.nivel - b.nivel || a.nome.localeCompare(b.nome)
-        );
-        const mapa: { [codigo: string]: ResultadoMRPComFilhos } = {};
-        const raiz: ResultadoMRPComFilhos[] = [];
-
-        itens.forEach((item) => {
-          mapa[item.codigo] = { ...item, filhos: [], expandido: true };
-        });
-
-        itens.forEach((item) => {
-          if (item.codigo_pai && mapa[item.codigo_pai]) {
-            mapa[item.codigo_pai].filhos!.push(mapa[item.codigo]);
-          } else {
-            raiz.push(mapa[item.codigo]);
-          }
-        });
-
-        setDados(raiz);
+        const itens = (res.data as ResultadoMRP[])
+          .sort((a, b) => a.nivel - b.nivel || a.nome.localeCompare(b.nome));
+        setDados(itens);
       })
       .catch(() => alert("Erro ao carregar MRP"))
       .finally(() => setLoading(false));
@@ -70,53 +41,15 @@ export default function MrpResultado() {
     }
   };
 
-  const renderLinha = (item: ResultadoMRPComFilhos, nivel: number = 0): JSX.Element[] => {
-    if (filtroTipo && item.tipo !== filtroTipo) return [];
-
-    const toggle = () => {
-      item.expandido = !item.expandido;
-      setDados([...dados]);
-    };
-
-    const linhaAtual = (
-      <tr key={`mrp-${item.codigo ?? `${item.nome}-${nivel}-${Math.random().toString(36).slice(2, 8)}`}`}>
-        <td className="border px-4 py-2">{item.codigo}</td>
-        <td className="border px-4 py-2">
-          <div
-            style={{ paddingLeft: `${nivel * 20}px` }}
-            className={`flex items-center gap-1 ${corPorNivel(nivel)}`}
-          >
-            {item.filhos && item.filhos.length > 0 && (
-              <button onClick={toggle} className="font-bold">
-                {item.expandido ? "▾" : "▸"}
-              </button>
-            )}
-            {item.nome}
-          </div>
-        </td>
-        <td className="border px-4 py-2">{item.necessario}</td>
-        <td className="border px-4 py-2">{item.em_estoque}</td>
-        <td className="border px-4 py-2 text-red-600">{item.faltando}</td>
-        <td className="border px-4 py-2">{item.lead_time}</td>
-        <td className="border px-4 py-2">
-          {item.data_compra ? new Date(item.data_compra).toLocaleDateString() : ""}
-        </td>
-        <td className="border px-4 py-2">{getTipoLabel(item.tipo)}</td>
-      </tr>
-    );
-
-    const filhos = item.expandido && item.filhos
-      ? item.filhos.flatMap((filho) => renderLinha(filho, nivel + 1))
-      : [];
-
-    return [linhaAtual, ...filhos];
-  };
+  const linhasFiltradas = filtroTipo
+    ? dados.filter(d => d.tipo === filtroTipo)
+    : dados;
 
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Resultado do Cálculo MRP</h1>
+
       <a
-        // href="http://localhost:8000/api/mrp/excel/"
         href={`${import.meta.env.VITE_API_URL}/mrp/excel/`}
         className="inline-block bg-green-600 text-white px-4 py-2 rounded mb-4"
         target="_blank"
@@ -133,7 +66,7 @@ export default function MrpResultado() {
           className="border px-3 py-1"
         >
           <option value="">Todos</option>
-          <option value="produto">Componente</option>
+          <option value="componente">Componente</option>      {/* ✅ corrigido */}
           <option value="materia_prima">Matéria-Prima</option>
           <option value="lista">Lista Técnica (BOM)</option>
         </select>
@@ -141,7 +74,7 @@ export default function MrpResultado() {
 
       {loading ? (
         <p>Carregando...</p>
-      ) : dados.length === 0 ? (
+      ) : linhasFiltradas.length === 0 ? (
         <p className="text-green-600">Tudo certo! Nenhum componente em falta.</p>
       ) : (
         <table className="min-w-full border border-gray-300 text-sm">
@@ -158,7 +91,31 @@ export default function MrpResultado() {
             </tr>
           </thead>
           <tbody>
-            {dados.flatMap((item) => renderLinha(item))}
+            {linhasFiltradas.map((item) => (
+              <tr key={item.id}>  {/* ✅ chave estável por ID */}
+                <td className="border px-4 py-2">{item.codigo || "—"}</td>
+                <td className="border px-4 py-2">
+                  <div
+                    style={{ paddingLeft: `${item.nivel * 20}px` }}  // indentação pelo nível
+                    className={`flex items-center gap-1 ${corPorNivel(item.nivel)}`}
+                  >
+                    {item.nome}
+                  </div>
+                </td>
+                <td className="border px-4 py-2">{item.necessario}</td>
+                <td className="border px-4 py-2">{item.em_estoque}</td>
+                <td className="border px-4 py-2 text-red-600">{item.faltando}</td>
+                <td className="border px-4 py-2">{item.lead_time}</td>
+                <td className="border px-4 py-2">
+                  {item.data_compra ? new Date(item.data_compra).toLocaleDateString() : "—"}
+                </td>
+                <td className="border px-4 py-2">
+                  {item.tipo === "componente" ? "Componente" :
+                   item.tipo === "materia_prima" ? "Matéria-Prima" :
+                   item.tipo === "lista" ? "Lista Técnica (BOM)" : item.tipo}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       )}
