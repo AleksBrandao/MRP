@@ -9,6 +9,8 @@ import DetalhesMRP from "./pages/DetalhesMRP";
 import ListasTecnicas from "./pages/ListasTecnicas";
 import Layout from "./components/Layout";
 import BOMPlanilha from "./pages/BOMPlanilha";
+import Estoque from "./pages/Estoque";
+import Pedidos from "./pages/Pedidos";  
 
 export default function App() {
   return (
@@ -23,7 +25,10 @@ export default function App() {
         <Route path="/mrp" element={<MrpResultado />} />
         <Route path="/historico" element={<HistoricoGeral />} />
         <Route path="/mrp-detalhado" element={<DetalhesMRP />} />
+        <Route path="/estoque" element={<Estoque />} />
+        <Route path="/pedidos" element={<Pedidos />} />
         <Route path="*" element={<div>❌ Página não encontrada</div>} />
+        
       </Routes>
     </Layout>
   );

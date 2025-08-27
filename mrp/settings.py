@@ -146,3 +146,18 @@ CSRF_TRUSTED_ORIGINS = [
     'https://localhost:8000',
     'https://*.githubpreview.dev',  # necessário no Codespaces
 ]
+
+MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_URL = "/media/"
+
+# Pasta padrão do arquivo de estoque
+ESTOQUE_DIR = MEDIA_ROOT / "estoque"
+ESTOQUE_DIR.mkdir(parents=True, exist_ok=True)
+ESTOQUE_PATH = ESTOQUE_DIR / "posicao_estoque.xlsx"  # nome fixo
+
+# Caminho do arquivo original de pedidos e do snapshot agregado
+# PEDIDOS_PATH = BASE_DIR / "data" / "pedidos.xlsx"       # será sobrescrito no upload
+# PEDIDOS_SNAPSHOT_PKL = BASE_DIR / "data" / "pedidos_snapshot.pkl"  # cache por código
+
+PEDIDOS_PATH = getattr(globals(), "PEDIDOS_PATH", BASE_DIR / "data" / "pedidos.xlsx")
+PEDIDOS_SNAPSHOT_PKL = getattr(globals(), "PEDIDOS_SNAPSHOT_PKL", BASE_DIR / "data" / "pedidos_snapshot.pkl")

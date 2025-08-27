@@ -17,6 +17,10 @@ from .views import (
 
 from .views import BOMFlatView, BOMFlatXLSXView
 
+from .views_estoque import UploadEstoqueView, ConsultaEstoqueView
+from .views_pedidos import UploadPedidosView, ConsultaPedidosView
+
+
 router = DefaultRouter()
 router.register(r'produtos', ProdutoViewSet)
 router.register(r'bom', BOMViewSet)  # 👈 ESSA LINHA PRECISA EXISTIR
@@ -43,5 +47,11 @@ urlpatterns = [
     # # Histórico
     path('api/historico-produto/<int:produto_id>/', historico_produto),
     path('api/historico-todos/', historico_todos_os_produtos),
+
+    path("api/estoque/upload/", UploadEstoqueView.as_view(), name="upload-estoque"),
+    path("api/estoque/", ConsultaEstoqueView.as_view(), name="consulta-estoque"),
+
+    path("api/pedidos/upload/", UploadPedidosView.as_view(), name="upload-pedidos"),
+    path("api/pedidos/",       ConsultaPedidosView.as_view(), name="consulta-pedidos"),
     
 ]

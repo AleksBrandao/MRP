@@ -18,6 +18,9 @@ export default function Navbar() {
           <NavLink to="/mrp" className={({isActive}) => `${link} ${isActive ? active : ""}`}>Executar MRP</NavLink>
           <NavLink to="/historico" className={({isActive}) => `${link} ${isActive ? active : ""}`}>Histórico</NavLink>
           <NavLink to="/mrp-detalhado" className={({isActive}) => `${link} ${isActive ? active : ""}`}>MRP Detalhado</NavLink>
+          <NavLink to="/estoque" className={({isActive}) => `${link} ${isActive ? active : ""}`}>Estoque</NavLink>
+          <NavLink to="/pedidos" className={({isActive}) => `${link} ${isActive ? active : ""}`}>Pedidos</NavLink>
+          
         </nav>
       </div>
     </header>

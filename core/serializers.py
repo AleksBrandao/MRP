@@ -3,6 +3,9 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 from .models import Produto, ListaTecnica, BOM, OrdemProducao
 
+from decimal import Decimal
+from .utils.pedidos_loader import get_snapshot_map
+
 
 # =========================
 # Produtos / Listas Técnicas
@@ -30,6 +33,10 @@ class ProdutoSerializer(serializers.ModelSerializer):
         if validated_data.get("codigo", None) == "":
             validated_data["codigo"] = None
         return super().update(instance, validated_data)
+    
+    def get_em_pedido(self, obj: Produto):
+        snap = get_snapshot_map()
+        return float(snap.get(obj.codigo, Decimal("0")))
 
 
 class ListaTecnicaSerializer(serializers.ModelSerializer):
