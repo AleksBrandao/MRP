@@ -106,7 +106,7 @@ export default function ListasTecnicas() {
     (p.codigo && String(p.codigo).trim() !== "" ? `[${p.codigo}] ` : "") + `${p.nome} — ${p.tipo}`;
 
   return (
-    <div className="max-w-3xl mx-auto py-6 px-4">
+    <div className="py-6">
       <h1 className="text-3xl font-semibold mb-4">Listas Técnicas</h1>
 
       <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-3 mb-4">

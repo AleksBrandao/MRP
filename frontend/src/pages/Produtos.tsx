@@ -108,7 +108,7 @@ export default function Produtos() {
   };
 
   return (
-    <main className="mx-auto max-w-[1400px] px-6 py-6">
+    <div className="py-6">
       {/* Header */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">
@@ -133,13 +133,7 @@ export default function Produtos() {
 
       {/* Tabela em página cheia, sem “janela” */}
       <div className="relative">
-        <table className="w-full table-fixed text-left">
-          {/* controle de largura das colunas */}
-          <colgroup>
-            {["w-40", "w-64", "w-56", "w-56", "w-24", "w-24", "w-28", "w-32"].map((w, i) => (
-              <col key={i} className={w} />
-            ))}
-          </colgroup>
+        <table className="w-full table-tight text-left">
 
 
           <thead className="bg-gray-50 text-sm">
@@ -234,6 +228,6 @@ export default function Produtos() {
         </div>
       )}
       <ToastContainer />
-    </main>
+    </div>
   );
 }

@@ -117,7 +117,7 @@ export default function Estoque() {
   };
 
   return (
-    <div className="px-4 py-6">
+    <div className="py-6">
       <h1 className="text-2xl font-semibold mb-4">Estoque</h1>
 
       {/* Filtros */}
@@ -189,8 +189,8 @@ export default function Estoque() {
       )}
 
       {/* Tabela */}
-      <div className="overflow-auto border rounded">
-        <table className="min-w-[900px] w-full text-sm">
+      <div className="border rounded overflow-hidden">
+        <table className="w-full table-tight">
           <thead className="bg-gray-50 text-left">
             <tr>
               <th className="px-3 py-2 border-b">ORG</th>

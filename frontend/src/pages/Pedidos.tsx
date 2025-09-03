@@ -143,8 +143,8 @@ export default function Pedidos() {
       </div>
 
       {/* Tabela */}
-      <div className="overflow-auto rounded-lg border">
-        <table className="min-w-full text-sm">
+      <div className="rounded-lg border overflow-hidden">
+        <table className="min-w-full table-tight">
           <thead className="bg-gray-50">
             <tr>
               <Th label="Pedido" col="pedido_num" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />

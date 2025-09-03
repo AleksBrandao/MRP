@@ -95,7 +95,7 @@ export default function DetalhesMRP() {
   }, [dados, filtroComponente, filtroOP]);
 
   return (
-    <div className="p-6">
+    <div className="py-6">
       <h1 className="text-2xl font-bold mb-4">Detalhamento do Cálculo MRP</h1>
 
       <div className="flex items-center gap-3 mb-4">
@@ -148,7 +148,7 @@ export default function DetalhesMRP() {
               <p><strong>Faltando:</strong> <span className="text-red-600">{fmt2(comp.faltando)}</span></p>
             </div>
 
-            <table className="w-full mt-4 border">
+            <table className="w-full mt-4 border table-tight">
               <thead className="bg-gray-100">
                 <tr>
                   <th className="border px-2 py-1 text-left">OP</th>

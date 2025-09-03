@@ -151,7 +151,7 @@ export default function BOMPlanilha() {
   };
 
   return (
-    <div className="max-w-[1400px] mx-auto py-6 px-4">
+    <div className="py-6">
       <div className="flex items-start sm:items-end justify-between gap-4 mb-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold">BOM (Formato Planilha)</h1>
@@ -213,8 +213,8 @@ export default function BOMPlanilha() {
         </div>
       )}
 
-      <div className="overflow-auto rounded-xl border">
-        <table className="min-w-full text-sm">
+      <div className="rounded-xl border overflow-hidden">
+        <table className="min-w-full table-tight">
           <thead className="bg-gray-100 sticky top-0 z-10">
             <tr className="text-left">
               <th className="px-4 py-3">Série</th>

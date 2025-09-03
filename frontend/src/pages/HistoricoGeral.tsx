@@ -20,9 +20,9 @@ export default function HistoricoGeral() {
   }, []);
 
   return (
-    <div className="p-4">
+    <div className="py-6">
       <h1 className="text-2xl font-bold mb-4">📜 Histórico de Alterações - Todos os Produtos</h1>
-      <table className="min-w-full text-sm border border-gray-300">
+      <table className="min-w-full border border-gray-300 table-tight">
         <thead className="bg-gray-100">
           <tr>
             <th className="p-2 border text-left">Produto</th>
