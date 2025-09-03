@@ -1,6 +1,0 @@
-{
-  "allowedCommands": [
-    "powershell.exe*Get-Content*",
-    "powershell.exe*Get-ChildItem*"
-  ]
-}
