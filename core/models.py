@@ -3,6 +3,11 @@ from simple_history.models import HistoricalRecords
 from django.core.exceptions import ValidationError
 from decimal import Decimal, ROUND_HALF_UP
 from django.db.models import Q, CheckConstraint, F
+from .validators import (
+    validate_positive_decimal, validate_lead_time, 
+    validate_codigo_produto, validate_percentage,
+    validate_quantidade_bom, validate_no_circular_reference
+)
 
 PCT = Decimal("100")
 FOUR_DP = Decimal("0.0001")
@@ -13,17 +18,24 @@ class Produto(models.Model):
         ("materia_prima", "Matéria-Prima"),
     ]
     codigo = models.CharField(
-    max_length=50,
-    unique=True,
-    null=True,      # <- permite gravar como NULL
-    blank=True      # <- formulário/admin podem deixar em branco
+        max_length=50,
+        unique=True,
+        null=True,      # <- permite gravar como NULL
+        blank=True,     # <- formulário/admin podem deixar em branco
+        validators=[validate_codigo_produto]
     )
     nome = models.CharField(max_length=255)
     fabricante = models.CharField(max_length=255, blank=True, default="")
     codigo_fabricante = models.CharField(max_length=255, blank=True, default="")
     unidade = models.CharField(max_length=20, blank=True, default="")
-    estoque = models.DecimalField(max_digits=14, decimal_places=2, default=0)
-    lead_time = models.IntegerField(default=0)
+    estoque = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0,
+        validators=[validate_positive_decimal]
+    )
+    lead_time = models.IntegerField(
+        default=0,
+        validators=[validate_lead_time]
+    )
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default="componente")
     history = HistoricalRecords()
 
@@ -76,7 +88,9 @@ class ListaTecnica(models.Model):
 class OrdemProducao(models.Model):
     lista = models.ForeignKey('ListaTecnica', on_delete=models.CASCADE,
                               related_name='ordens')  # <- aqui
-    quantidade = models.IntegerField()
+    quantidade = models.IntegerField(
+        validators=[validate_positive_decimal]
+    )
     data_entrega = models.DateField()
     criado_em = models.DateTimeField(auto_now_add=True, null=True, blank=True)
     atualizado_em = models.DateTimeField(auto_now=True, null=True, blank=True)
@@ -89,14 +103,18 @@ class BOM(models.Model):
     lista_pai = models.ForeignKey(ListaTecnica, on_delete=models.CASCADE, related_name='itens')
     componente = models.ForeignKey(Produto, null=True, blank=True, on_delete=models.CASCADE, related_name='usos')
     sublista   = models.ForeignKey(ListaTecnica, null=True, blank=True, on_delete=models.CASCADE, related_name='usos_como_sublista')
-    quantidade = models.DecimalField(max_digits=12, decimal_places=4, default=1)
+    quantidade = models.DecimalField(
+        max_digits=12, decimal_places=4, default=1,
+        validators=[validate_quantidade_bom]
+    )
 
      # NOVOS CAMPOS
     comentarios = models.CharField(max_length=255, blank=True, null=True)
     ponderacao_operacao = models.DecimalField(
         max_digits=7,
         decimal_places=4,
-        default=100
+        default=100,
+        validators=[validate_percentage]
     )
     quant_ponderada = models.DecimalField(
         max_digits=12, decimal_places=4, editable=False, default=Decimal("0.0000")
@@ -116,6 +134,14 @@ class BOM(models.Model):
     def clean(self):
         if bool(self.componente) == bool(self.sublista):
             raise ValidationError("Informe apenas um: componente OU sublista.")
+        
+        # Validar referência circular se for sublista
+        if self.sublista:
+            validate_no_circular_reference(self.lista_pai, self.sublista)
+        
+        # Validar quantidade
+        if self.quantidade and self.quantidade <= 0:
+            raise ValidationError("Quantidade deve ser maior que zero.")
         
     class Meta:
         constraints = [

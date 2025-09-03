@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { ComponenteAPI } from "../services/api";
 import CadastrarComponente from "../components/CadastrarComponente";
+import { LoadingSpinner } from "../components/LoadingSpinner";
+import { useToast } from "../hooks/useToast";
 
 interface Produto {
   id: number;
@@ -20,6 +22,8 @@ export default function Produtos() {
   const [editando, setEditando] = useState<Produto | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [busca, setBusca] = useState("");
+  const [deletando, setDeletando] = useState<number | null>(null);
+  const { showToast, ToastContainer } = useToast();
 
   const fetchProdutos = async () => {
     try {
@@ -28,6 +32,7 @@ export default function Produtos() {
       setProdutos(data ?? []);
     } catch (e) {
       console.error("Erro ao buscar componentes:", e);
+      showToast('Erro ao carregar produtos', 'error');
     } finally {
       setCarregando(false);
     }
@@ -69,12 +74,16 @@ export default function Produtos() {
 
   const handleExcluir = async (id: number) => {
     if (!confirm("Tem certeza que deseja excluir este componente?")) return;
+    setDeletando(id);
     try {
       await ComponenteAPI.remove(id);
+      showToast('Produto excluído com sucesso', 'success');
       await fetchProdutos();
     } catch (err) {
       console.error("Erro ao excluir:", err);
-      alert("Erro ao excluir componente.");
+      showToast('Erro ao excluir produto', 'error');
+    } finally {
+      setDeletando(null);
     }
   };
 
@@ -92,6 +101,7 @@ export default function Produtos() {
     });
     setShowModal(false);
     setEditando(null);
+    showToast(editando ? 'Produto atualizado' : 'Produto criado', 'success');
 
     // opcional: garantir consistência com o backend
     void fetchProdutos();
@@ -149,7 +159,7 @@ export default function Produtos() {
             {carregando ? (
               <tr>
                 <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
-                  Carregando…
+                  <LoadingSpinner message="Carregando produtos..." />
                 </td>
               </tr>
             ) : filtrados.length === 0 ? (
@@ -178,9 +188,10 @@ export default function Produtos() {
                       </button>
                       <button
                         onClick={() => handleExcluir(p.id)}
-                        className="rounded-lg border border-red-300 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                        disabled={deletando === p.id}
+                        className="rounded-lg border border-red-300 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
                       >
-                        Excluir
+                        {deletando === p.id ? 'Excluindo...' : 'Excluir'}
                       </button>
                     </div>
                   </td>
@@ -222,6 +233,7 @@ export default function Produtos() {
           </div>
         </div>
       )}
+      <ToastContainer />
     </main>
   );
 }

@@ -125,7 +125,6 @@ export default function BOMPage() {
 
       {/* Tabela */}
       <div className="px-4 md:px-8 py-6">
-        <h1 className="text-2xl font-semibold mb-4">Cadastro de Estrutura de Produto (BOM)</h1>
         <table className="w-full table-auto text-sm border border-gray-300">
           <colgroup>
             <col className="w-48" />
