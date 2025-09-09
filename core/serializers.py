@@ -1,7 +1,7 @@
 # core/serializers.py
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
-from .models import Produto, ListaTecnica, BOM, OrdemProducao
+from .models import Produto, ListaTecnica, BOM, OrdemProducao, BOMSublista, BOMComponente
 
 from decimal import Decimal
 from .utils.pedidos_loader import get_snapshot_map
@@ -180,3 +180,13 @@ class OrdemProducaoSerializer(serializers.ModelSerializer):
             "atualizado_em",
         ]
         read_only_fields = ("criado_em", "atualizado_em")
+
+class BOMSublistaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BOMSublista
+        fields = ["id", "lista_pai", "sublista"]
+
+class BOMComponenteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BOMComponente
+        fields = ["id", "lista_pai", "componente", "quantidade", "ponderacao", "comentarios"]

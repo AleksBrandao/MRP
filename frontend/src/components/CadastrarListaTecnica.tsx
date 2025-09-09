@@ -38,8 +38,8 @@ export default function CadastrarListaTecnica({ onClose, onSuccess }: { onClose:
         <input name="codigo" placeholder="Código" onChange={handleChange} value={form.codigo} />
         <input name="nome" placeholder="Nome" onChange={handleChange} value={form.nome} />
         <input name="unidade" placeholder="Unidade (ex: un, kg)" onChange={handleChange} value={form.unidade} />
-        <input name="estoque" placeholder="Estoque" type="number" onChange={handleChange} value={form.estoque} />
-        <input name="lead_time" placeholder="Lead Time (dias)" type="number" onChange={handleChange} value={form.lead_time} />
+        {/* <input name="estoque" placeholder="Estoque" type="number" onChange={handleChange} value={form.estoque} /> */}
+        {/* <input name="lead_time" placeholder="Lead Time (dias)" type="number" onChange={handleChange} value={form.lead_time} /> */}
       </div>
 
       <div className="mt-4 flex justify-end gap-2">

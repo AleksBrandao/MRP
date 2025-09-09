@@ -13,6 +13,8 @@ from .views import (
     mrp_detalhado,
     ComponenteViewSet,
     ListaTecnicaViewSet,
+    BOMSublistaViewSet, 
+    BOMComponenteViewSet,
 )
 
 from .views import BOMFlatView, BOMFlatXLSXView
@@ -27,6 +29,8 @@ router.register(r'bom', BOMViewSet)  # 👈 ESSA LINHA PRECISA EXISTIR
 router.register(r'ordens', OrdemProducaoViewSet)
 router.register(r'componentes', ComponenteViewSet, basename='componente')
 router.register(r'listas-tecnicas', ListaTecnicaViewSet, basename='lista-tecnica')
+router.register(r"bom-sublistas", BOMSublistaViewSet, basename="bom-sublista")
+router.register(r"bom-componentes", BOMComponenteViewSet, basename="bom-componente")
 
 urlpatterns = [
     path('api/bom-flat/', BOMFlatView.as_view(), name='bom-flat'),

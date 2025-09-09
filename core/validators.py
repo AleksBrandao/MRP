@@ -5,8 +5,8 @@ import re
 
 def validate_positive_decimal(value):
     """Valida que o valor decimal seja positivo"""
-    if value <= 0:
-        raise ValidationError(f'{value} deve ser maior que zero.')
+    if value < 0:   # <-- antes devia estar "if value <= 0"
+        raise ValidationError("O valor deve ser maior ou igual a zero.")
 
 def validate_lead_time(value):
     """Valida que o lead time seja não negativo"""

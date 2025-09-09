@@ -146,7 +146,7 @@ export default function CadastrarComponente({ onClose, onSaved, initialData }: P
           />
         </div>
 
-        <div>
+        {/* <div>
           <label className="mb-1 block text-sm text-gray-600">Estoque</label>
           <input
             type="number"
@@ -155,9 +155,9 @@ export default function CadastrarComponente({ onClose, onSaved, initialData }: P
             className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
             placeholder="0"
           />
-        </div>
+        </div> */}
 
-        <div>
+        {/* <div>
           <label className="mb-1 block text-sm text-gray-600">Lead time (dias)</label>
           <input
             type="number"
@@ -166,7 +166,7 @@ export default function CadastrarComponente({ onClose, onSaved, initialData }: P
             className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
             placeholder="0"
           />
-        </div>
+        </div> */}
 
         {erro && (
           <div className="col-span-2 rounded-xl bg-red-50 p-3 text-sm text-red-700">

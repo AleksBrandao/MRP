@@ -3,6 +3,7 @@ from simple_history.models import HistoricalRecords
 from django.core.exceptions import ValidationError
 from decimal import Decimal, ROUND_HALF_UP
 from django.db.models import Q, CheckConstraint, F
+from django.core.validators import MinValueValidator
 from .validators import (
     validate_positive_decimal, validate_lead_time, 
     validate_codigo_produto, validate_percentage,
@@ -30,7 +31,8 @@ class Produto(models.Model):
     unidade = models.CharField(max_length=20, blank=True, default="")
     estoque = models.DecimalField(
         max_digits=14, decimal_places=2, default=0,
-        validators=[validate_positive_decimal]
+        validators=[MinValueValidator(0)],  # ← permite 0, bloqueia negativos
+        blank=True                  # ← não obrigatório no formulário admin
     )
     lead_time = models.IntegerField(
         default=0,
@@ -159,3 +161,51 @@ class BOM(models.Model):
                 check=Q(ponderacao_operacao__gte=0) & Q(ponderacao_operacao__lte=100),
             ),
         ]
+
+class BOMSublista(models.Model):
+    lista_pai = models.ForeignKey(
+        ListaTecnica, on_delete=models.CASCADE, related_name="sublistas_vinculadas"
+    )
+    sublista = models.ForeignKey(
+        ListaTecnica, on_delete=models.CASCADE, related_name="pais_vinculando"
+    )
+
+    class Meta:
+        unique_together = ("lista_pai", "sublista")
+        verbose_name = "Vínculo de Sublista"
+        verbose_name_plural = "Vínculos de Sublistas"
+
+    def __str__(self):
+        return f"{self.lista_pai} ➜ {self.sublista}"
+    
+
+class BOMComponente(models.Model):
+    lista_pai = models.ForeignKey(
+        ListaTecnica, on_delete=models.CASCADE, related_name="componentes_vinculados"
+    )
+    # 👇 Aponta para Produto e limita escolhas a produtos do tipo "componente"
+    componente = models.ForeignKey(
+        Produto,
+        on_delete=models.CASCADE,
+        related_name="em_listas",
+        limit_choices_to={"tipo": "componente"},
+    )
+    quantidade = models.DecimalField(max_digits=12, decimal_places=3, default=1,
+                                     validators=[validate_quantidade_bom])
+    ponderacao = models.DecimalField("Ponderação (%)", max_digits=6, decimal_places=2,
+                                     default=100, validators=[validate_percentage])
+    comentarios = models.TextField(blank=True, default="")
+
+    class Meta:
+        unique_together = ("lista_pai", "componente")
+        verbose_name = "Componente em Lista Técnica"
+        verbose_name_plural = "Componentes em Listas Técnicas"
+
+    def clean(self):
+        # Garante que o produto escolhido é realmente do tipo "componente"
+        if self.componente and getattr(self.componente, "tipo", None) != "componente":
+            raise ValidationError("Somente produtos do tipo 'componente' podem ser vinculados.")
+
+    def __str__(self):
+        return f"{self.lista_pai} • {self.componente} (qtd {self.quantidade})"
+

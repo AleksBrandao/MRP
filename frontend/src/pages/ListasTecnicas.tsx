@@ -110,12 +110,12 @@ export default function ListasTecnicas() {
       <h1 className="text-3xl font-semibold mb-4">Listas Técnicas</h1>
 
       <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-3 mb-4">
-        <input
+        {/* <input
           className="border rounded px-3 py-2"
           placeholder="Código (opcional)"
           value={form.codigo ?? ""} // <- aceita vazio
           onChange={(e) => setForm({ ...form, codigo: e.target.value })}
-        />
+        /> */}
         <input
           className="border rounded px-3 py-2"
           placeholder="Nome"
@@ -140,12 +140,12 @@ export default function ListasTecnicas() {
           ))}
         </select>
 
-        <input
+        {/* <input
           className="border rounded px-3 py-2"
           placeholder="Observações"
           value={form.observacoes}
           onChange={(e) => setForm({ ...form, observacoes: e.target.value })}
-        />
+        /> */}
 
         {/* Parent: só aparece quando tipo NÃO é SERIE */}
         {form.tipo !== "SERIE" && (

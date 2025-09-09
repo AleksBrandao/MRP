@@ -13,12 +13,14 @@ from rest_framework.views import APIView
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .models import Produto, BOM, OrdemProducao, ListaTecnica
+from .models import Produto, BOM, OrdemProducao, ListaTecnica, BOMSublista, BOMComponente
 from .serializers import (
     ProdutoSerializer,
     BOMSerializer,
     OrdemProducaoSerializer,
     ListaTecnicaSerializer,
+    BOMSublistaSerializer, 
+    BOMComponenteSerializer,
 )
 
 from django.utils.functional import cached_property
@@ -763,3 +765,15 @@ class BOMFlatXLSXView(APIView):
         response["Content-Disposition"] = 'attachment; filename="bom_planilha.xlsx"'
         wb.save(response)
         return response
+
+class BOMSublistaViewSet(viewsets.ModelViewSet):
+    queryset = BOMSublista.objects.all().select_related("lista_pai", "sublista")
+    serializer_class = BOMSublistaSerializer
+    filter_backends = [filters.SearchFilter]
+    search_fields = ["lista_pai__nome", "sublista__nome"]
+
+class BOMComponenteViewSet(viewsets.ModelViewSet):
+    queryset = BOMComponente.objects.all().select_related("lista_pai", "componente")
+    serializer_class = BOMComponenteSerializer
+    filter_backends = [filters.SearchFilter]
+    search_fields = ["lista_pai__nome", "componente__nome", "comentarios"]
