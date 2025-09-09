@@ -2,7 +2,7 @@ from decimal import Decimal, ROUND_HALF_UP   # ✅ importa o ROUND_HALF_UP
 from django.contrib import admin
 from django.db.models import F, Value, DecimalField, ExpressionWrapper
 from django.db.models.functions import Coalesce            # ✅ para tratar NULL -> 100
-from .models import Produto, ListaTecnica, BOM, OrdemProducao
+from .models import Produto, ListaTecnica, BOM, OrdemProducao, BOMSublista, BOMComponente
 
 
 def dash(v):
@@ -142,3 +142,13 @@ class BOMAdmin(admin.ModelAdmin):
         p = Decimal(100 if p_raw is None else p_raw)       # None -> 100, 0 -> 0
         return (q * p / Decimal(100)).quantize(Decimal("0.0000"))
     quant_ponderada_view.short_description = "Quant. Ponderada"
+
+@admin.register(BOMSublista)
+class BOMSublistaAdmin(admin.ModelAdmin):
+    list_display = ("lista_pai", "sublista")
+    search_fields = ("lista_pai__nome", "sublista__nome")
+
+@admin.register(BOMComponente)
+class BOMComponenteAdmin(admin.ModelAdmin):
+    list_display = ("lista_pai", "componente", "quantidade", "ponderacao")
+    search_fields = ("lista_pai__nome", "componente__nome", "comentarios")

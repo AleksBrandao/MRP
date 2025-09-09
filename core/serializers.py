@@ -181,12 +181,32 @@ class OrdemProducaoSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ("criado_em", "atualizado_em")
 
+# core/serializers.py (APÓS BOMSerializer)
+from .models import BOMSublista, BOMComponente
+
 class BOMSublistaSerializer(serializers.ModelSerializer):
+    # rótulos auxiliares (opcional)
+    lista_pai_nome = serializers.CharField(source="lista_pai.nome", read_only=True)
+    sublista_nome = serializers.CharField(source="sublista.nome", read_only=True)
+
     class Meta:
         model = BOMSublista
-        fields = ["id", "lista_pai", "sublista"]
+        fields = ["id", "lista_pai", "sublista", "lista_pai_nome", "sublista_nome"]
+
 
 class BOMComponenteSerializer(serializers.ModelSerializer):
+    lista_pai_nome = serializers.CharField(source="lista_pai.nome", read_only=True)
+    componente_nome = serializers.CharField(source="componente.nome", read_only=True)
+
     class Meta:
         model = BOMComponente
-        fields = ["id", "lista_pai", "componente", "quantidade", "ponderacao", "comentarios"]
+        fields = [
+            "id", "lista_pai", "componente", "quantidade", "ponderacao", "comentarios",
+            "lista_pai_nome", "componente_nome"
+        ]
+
+    def validate(self, attrs):
+        comp = attrs.get("componente") or getattr(self.instance, "componente", None)
+        if comp and getattr(comp, "tipo", None) != "componente":
+            raise serializers.ValidationError("Somente produtos do tipo 'componente' podem ser vinculados.")
+        return attrs

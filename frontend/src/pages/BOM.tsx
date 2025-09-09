@@ -1,214 +1,317 @@
 import { useEffect, useMemo, useState } from "react";
-import { BOMAPI } from "../services/api";
-import type { BOMItem } from "../services/api";
-import CadastrarBOMItem from "../components/CadastrarBOMItem";
+import { BOMSublistasAPI, BOMComponentesAPI, fetchListasTecnicas, fetchProdutosComponentes } from "../services/api";
+// import api from "../services/api";
+import SublistaModal from "../components/SublistaModal";
+import ComponenteModal from "../components/ComponenteModal";
 
-
-type Option = { value: number; label: string };
+type LT = { id: number; nome: string; codigo?: string; tipo?: string };
+type Produto = { id: number; nome: string; codigo?: string; unidade?: string };
 
 export default function BOMPage() {
-  const [items, setItems] = useState<BOMItem[]>([]);
-  const [listas, setListas] = useState<Option[]>([]);
-  const [componentes, setComponentes] = useState<Option[]>([]);
-  const [openModal, setOpenModal] = useState(false);
-  const [editing, setEditing] = useState<BOMItem | null>(null);
+  // --- Estado dos filtros --- //
+  const [selLista, setSelLista] = useState<number | null>(null);       // filtro Lista Pai (ID)
+  const [selComp, setSelComp] = useState<number | null>(null);         // filtro Componente (ID) — afeta só a grade de Componentes
 
-  // filtros rápidos da barra superior (opcional)
-  const [selLista, setSelLista] = useState<number>(0);
-  const [selComponente, setSelComponente] = useState<number>(0);
+  // Select assíncrono - Lista Pai
+  const [qPai, setQPai] = useState("");
+  const [paiPage, setPaiPage] = useState(1);
+  const [paiOpts, setPaiOpts] = useState<LT[]>([]);
+  const [paiHasMore, setPaiHasMore] = useState(false);
+  const [loadingPai, setLoadingPai] = useState(false);
+  const [paiSelObj, setPaiSelObj] = useState<LT | null>(null);
+
+  // Select assíncrono - Componente (Produto tipo=componente)
+  const [qComp, setQComp] = useState("");
+  const [compPage, setCompPage] = useState(1);
+  const [compOpts, setCompOpts] = useState<Produto[]>([]);
+  const [compHasMore, setCompHasMore] = useState(false);
+  const [loadingComp, setLoadingComp] = useState(false);
+  const [compSelObj, setCompSelObj] = useState<Produto | null>(null);
+
+  // --- Modais --- //
+  const [openSublista, setOpenSublista] = useState(false);
+  const [openComponente, setOpenComponente] = useState(false);
+
+  // --- Dados --- //
+  const [sublistas, setSublistas] = useState<any[]>([]);
+  const [componentes, setComponentes] = useState<any[]>([]);
+
+  // Carregar opções do select de Lista Pai
+  useEffect(() => {
+    setLoadingPai(true);
+    fetchListasTecnicas({ search: qPai, page: paiPage, page_size: 15 })
+      .then((r) => {
+        const arr = Array.isArray(r.data) ? r.data : r.data.results ?? [];
+        const next = Array.isArray(r.data) ? null : r.data.next ?? null;
+        setPaiHasMore(Boolean(next));
+        setPaiOpts((prev) => (paiPage === 1 ? arr : [...prev, ...arr]));
+      })
+      .finally(() => setLoadingPai(false));
+  }, [qPai, paiPage]);
+
+  // Carregar opções do select de Componente
+  useEffect(() => {
+    setLoadingComp(true);
+    fetchProdutosComponentes({ search: qComp, page: compPage, page_size: 15 })
+      .then((r) => {
+        const arr = Array.isArray(r.data) ? r.data : r.data.results ?? [];
+        const next = Array.isArray(r.data) ? null : r.data.next ?? null;
+        setCompHasMore(Boolean(next));
+        setCompOpts((prev) => (compPage === 1 ? arr : [...prev, ...arr]));
+      })
+      .finally(() => setLoadingComp(false));
+  }, [qComp, compPage]);
+
+  // Se usuário digitou ID manualmente (ou veio via state), buscar rótulos para preview
+  useEffect(() => {
+    if (selLista && !paiSelObj) {
+      api.get(`/listas-tecnicas/${selLista}/`).then((r) => setPaiSelObj(r.data)).catch(() => {});
+    }
+    if (selComp && !compSelObj) {
+      api.get(`/produtos/${selComp}/`).then((r) => setCompSelObj(r.data)).catch(() => {}); // troque para /componentes/ se for o seu
+    }
+  }, [selLista, selComp]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const paramsSub = useMemo(() => (selLista ? { lista_pai: selLista } : undefined), [selLista]);
+  const paramsComp = useMemo(() => {
+    const p: Record<string, any> = {};
+    if (selLista) p.lista_pai = selLista;
+    if (selComp) p.componente = selComp;   // 👈 só grade de componentes usa
+    return Object.keys(p).length ? p : undefined;
+  }, [selLista, selComp]);
 
   const carregar = async () => {
-    const resp = await BOMAPI.list();
-    setItems(resp.data || []);
+    const [r1, r2] = await Promise.all([
+      BOMSublistasAPI.list(paramsSub),
+      BOMComponentesAPI.list(paramsComp),
+    ]);
+    setSublistas(r1.data?.results || r1.data || []);
+    setComponentes(r2.data?.results || r2.data || []);
   };
 
   useEffect(() => {
     carregar();
-    BOMAPI.listas().then((r) => {
-      setListas(
-        (r.data || []).map((x: any) => ({
-          value: x.id,
-          label: x.codigo ? `[${x.codigo}] ${x.nome}` : x.nome,
-        }))
-      );
-    });
-    BOMAPI.componentes().then((r) => {
-      setComponentes(
-        (r.data || []).map((x: any) => ({
-          value: x.id,
-          label: x.codigo ? `[${x.codigo}] ${x.nome}` : x.nome,
-        }))
-      );
-    });
-  }, []);
+  }, [selLista, selComp]);
 
-  const filtered = useMemo(() => {
-    return items.filter((it) => {
-      if (selLista && it.lista_pai !== selLista) return false;
-      if (selComponente && it.componente !== selComponente) return false;
-      return true;
-    });
-  }, [items, selLista, selComponente]);
-
-  const onAddClick = () => {
-    setEditing(null);
-    setOpenModal(true);
+  // limpar seleções dos selects (UX)
+  const clearLista = () => {
+    setSelLista(null);
+    setPaiSelObj(null);
+    setQPai(""); setPaiPage(1); setPaiOpts([]);
   };
-  const onEditClick = (row: BOMItem) => {
-    setEditing(row);
-    setOpenModal(true);
+  const clearComp = () => {
+    setSelComp(null);
+    setCompSelObj(null);
+    setQComp(""); setCompPage(1); setCompOpts([]);
   };
-  const onSaved = () => {
-    carregar();
-  };
-  const onDelete = async (row: BOMItem) => {
-    if (!row.id) return;
-    if (!confirm("Confirma excluir este item da BOM?")) return;
-    await BOMAPI.remove(row.id);
-    carregar();
-  };
-
-  const nomeLista = (id?: number) => listas.find((l) => l.value === id)?.label || "";
-  const nomeComp = (id?: number) => componentes.find((c) => c.value === id)?.label || "";
 
   return (
-    <div className="py-6">
-      <h1 className="text-2xl font-semibold mb-4">Cadastro de Estrutura de Produto (BOM)</h1>
+    <div className="p-6">
+      <h1 className="text-2xl font-bold mb-4">Lista Técnica (BOM)</h1>
 
-      {/* Barra superior (igual estilo de Produtos) */}
-      <div className="bg-white rounded-2xl border p-4 mb-6 shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium mb-1">Selecione a Lista Técnica</label>
-            <select
-              className="w-full border rounded-lg px-3 py-2"
-              value={selLista || 0}
-              onChange={(e) => setSelLista(Number(e.target.value))}
-            >
-              <option value={0}>Todas</option>
-              {listas.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="md:col-span-1">
-            <label className="block text-sm font-medium mb-1">Selecione o Componente</label>
-            <select
-              className="w-full border rounded-lg px-3 py-2"
-              value={selComponente || 0}
-              onChange={(e) => setSelComponente(Number(e.target.value))}
-            >
-              <option value={0}>Todos</option>
-              {componentes.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-end">
+      {/* --- Filtros de topo --- */}
+      <div className="grid md:grid-cols-2 gap-6 mb-6">
+        {/* Filtro: Lista Técnica Pai */}
+        <div>
+          <label className="block text-sm font-medium mb-1">Lista Técnica (Pai)</label>
+          <div className="flex items-center gap-2">
+            <input
+              className="border rounded-lg px-3 py-2 w-72"
+              placeholder="Buscar Lista Técnica por nome..."
+              value={qPai}
+              onChange={(e) => { setPaiPage(1); setQPai(e.target.value); }}
+            />
             <button
-              onClick={onAddClick}
-              className="w-full md:w-auto px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700"
+              className="px-3 py-2 border rounded-lg"
+              onClick={() => setPaiPage((p) => p + 1)}
+              disabled={!paiHasMore || loadingPai}
+              title={paiHasMore ? "Carregar mais" : "Sem mais resultados"}
             >
-              Adicionar Componente
+              {loadingPai ? "..." : "Mais"}
             </button>
+          </div>
+          <div className="mt-2 max-h-44 overflow-auto border rounded-xl">
+            {paiOpts.map((lt) => (
+              <button
+                key={lt.id}
+                onClick={() => { setSelLista(lt.id); setPaiSelObj(lt); }}
+                className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${selLista === lt.id ? "bg-blue-50" : ""}`}
+                title={lt.tipo ? `Tipo: ${lt.tipo}` : ""}
+              >
+                <div className="font-medium">{lt.nome}</div>
+                <div className="text-xs text-gray-500">ID: {lt.id}{lt.codigo ? ` • Código: ${lt.codigo}` : ""}</div>
+              </button>
+            ))}
+            {(!paiOpts || paiOpts.length === 0) && (
+              <div className="p-3 text-gray-500">Nenhum resultado.</div>
+            )}
+          </div>
+
+          {selLista && paiSelObj && (
+            <div className="mt-2 text-sm">
+              Selecionado: <b>{paiSelObj.nome}</b> (ID {paiSelObj.id}){" "}
+              <button className="text-red-600 ml-1" onClick={clearLista}>Limpar</button>
+            </div>
+          )}
+        </div>
+
+        {/* Filtro: Componente (opcional, afeta só a grade de Componentes) */}
+        <div>
+          <label className="block text-sm font-medium mb-1">Componente (Produto)</label>
+          <div className="flex items-center gap-2">
+            <input
+              className="border rounded-lg px-3 py-2 w-72"
+              placeholder="Buscar Componente por nome/código..."
+              value={qComp}
+              onChange={(e) => { setCompPage(1); setQComp(e.target.value); }}
+            />
+            <button
+              className="px-3 py-2 border rounded-lg"
+              onClick={() => setCompPage((p) => p + 1)}
+              disabled={!compHasMore || loadingComp}
+              title={compHasMore ? "Carregar mais" : "Sem mais resultados"}
+            >
+              {loadingComp ? "..." : "Mais"}
+            </button>
+          </div>
+          <div className="mt-2 max-h-44 overflow-auto border rounded-xl">
+            {compOpts.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => { setSelComp(p.id); setCompSelObj(p); }}
+                className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${selComp === p.id ? "bg-blue-50" : ""}`}
+                title={p.unidade ? `Unidade: ${p.unidade}` : ""}
+              >
+                <div className="font-medium">{p.nome}</div>
+                <div className="text-xs text-gray-500">ID: {p.id}{p.codigo ? ` • Código: ${p.codigo}` : ""}</div>
+              </button>
+            ))}
+            {(!compOpts || compOpts.length === 0) && (
+              <div className="p-3 text-gray-500">Nenhum resultado.</div>
+            )}
+          </div>
+
+          {selComp && compSelObj && (
+            <div className="mt-2 text-sm">
+              Selecionado: <b>{compSelObj.nome}</b> (ID {compSelObj.id}){" "}
+              <button className="text-red-600 ml-1" onClick={clearComp}>Limpar</button>
+            </div>
+          )}
+          <div className="mt-1 text-xs text-gray-500">
+            Dica: este filtro afeta apenas a tabela <b>Componentes vinculados</b>.
           </div>
         </div>
       </div>
 
-      {/* Tabela */}
-      <div className="py-6">
-        <table className="w-full table-tight border border-gray-300">
-          {/* colgroup removido para permitir ajuste automático das colunas */}
-          <thead className="bg-gray-100 text-gray-700 border-b">
-            <tr>
-              <th className="text-left px-4 py-2">Lista Técnica (Pai)</th>
-              <th className="text-left px-4 py-2">Sublista</th>
-              <th className="text-left px-4 py-2">Código</th>
-              <th className="text-left px-4 py-2">Nome</th>
-              <th className="text-right px-4 py-2">Quantidade</th>
-              <th className="text-right px-4 py-2">Ponderação</th>
-              <th className="text-right px-4 py-2">Quant. Ponderada</th>
-              <th className="text-left px-4 py-2">Comentários</th>
-              <th className="text-left px-4 py-2">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((row) => {
-              const listaLabel =
-                row.lista_pai_nome
-                  ? row.lista_pai_nome
-                  : nomeLista(row.lista_pai);
-
-              const sublistaLabel =
-                row.sublista_nome
-                  ? row.sublista_nome
-                  : (row.sublista ? nomeLista(row.sublista) : "—");
-              
-              return (
-                <tr key={row.id} className="border-t">
-                  <td className="px-4 py-2">{listaLabel}</td>
-                  <td className="px-4 py-2">{sublistaLabel}</td>
-                  <td className="px-4 py-2">{row.componente_codigo || "—"}</td>
-                  <td className="px-4 py-2">{row.componente_nome || nomeComp(row.componente)}</td>
-                  <td className="px-4 py-2 text-right">{Number(row.quantidade).toLocaleString()}</td>
-                  <td className="px-4 py-2 text-right">
-                    {Number(row.ponderacao_operacao).toLocaleString()}%
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    {Number(row.quant_ponderada ?? 0).toLocaleString(undefined, {
-                      minimumFractionDigits: 4,
-                      maximumFractionDigits: 4,
-                    })}
-                  </td>
-                  <td className="px-4 py-2">{row.comentarios || "—"}</td>
-                  <td className="px-4 py-2">
-                    <div className="flex gap-3">
-                      <button
-                        className="text-blue-600 hover:underline"
-                        onClick={() => onEditClick(row)}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        className="text-red-600 hover:underline"
-                        onClick={() => onDelete(row)}
-                      >
-                        Excluir
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-            {filtered.length === 0 && (
-              <tr>
-                <td className="px-4 py-6 text-center text-gray-500" colSpan={8}>
-                  Nenhum item encontrado.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      {/* Ações */}
+      <div className="flex gap-2 mb-6">
+        <button className="px-3 py-2 rounded-xl border bg-gray-50 hover:bg-gray-100" onClick={() => setOpenSublista(true)}>
+          Adicionar Sublista
+        </button>
+        <button className="px-3 py-2 rounded-xl border bg-gray-50 hover:bg-gray-100" onClick={() => setOpenComponente(true)}>
+          Adicionar Componente
+        </button>
       </div>
 
-      {/* Modal */}
-      <CadastrarBOMItem
-        open={openModal}
-        onClose={() => setOpenModal(false)}
-        onSaved={onSaved}
-        initialData={editing}
+      {/* Sublistas */}
+      <h2 className="text-xl font-semibold mb-2">Sublistas vinculadas</h2>
+      <table className="min-w-full border rounded-xl overflow-hidden mb-8">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-4 py-2 text-left">Lista Técnica (Pai)</th>
+            <th className="px-4 py-2 text-left">Sublista</th>
+            <th className="px-4 py-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {sublistas.map((row: any) => (
+            <tr key={row.id} className="border-t">
+              <td className="px-4 py-2">{row.lista_pai_nome ?? row.lista_pai}</td>
+              <td className="px-4 py-2">{row.sublista_nome ?? row.sublista}</td>
+              <td className="px-4 py-2 text-right">
+                <button
+                  className="text-red-600 hover:underline"
+                  onClick={async () => {
+                    if (confirm("Excluir vínculo de sublista?")) {
+                      await BOMSublistasAPI.remove(row.id);
+                      carregar();
+                    }
+                  }}
+                >
+                  Excluir
+                </button>
+              </td>
+            </tr>
+          ))}
+          {sublistas.length === 0 && (
+            <tr>
+              <td colSpan={3} className="px-4 py-6 text-gray-500 text-center">
+                Nenhuma sublista vinculada.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {/* Componentes */}
+      <h2 className="text-xl font-semibold mb-2">Componentes vinculados</h2>
+      <table className="min-w-full border rounded-xl overflow-hidden">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-4 py-2 text-left">Lista Técnica (Pai)</th>
+            <th className="px-4 py-2 text-left">Componente</th>
+            <th className="px-4 py-2 text-left">Qtd</th>
+            <th className="px-4 py-2 text-left">Pond. (%)</th>
+            <th className="px-4 py-2 text-left">Comentários</th>
+            <th className="px-4 py-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {componentes.map((row: any) => (
+            <tr key={row.id} className="border-t">
+              <td className="px-4 py-2">{row.lista_pai_nome ?? row.lista_pai}</td>
+              <td className="px-4 py-2">{row.componente_nome ?? row.componente}</td>
+              <td className="px-4 py-2">{row.quantidade}</td>
+              <td className="px-4 py-2">{row.ponderacao}</td>
+              <td className="px-4 py-2">{row.comentarios || "—"}</td>
+              <td className="px-4 py-2 text-right">
+                <button
+                  className="text-red-600 hover:underline"
+                  onClick={async () => {
+                    if (confirm("Excluir componente?")) {
+                      await BOMComponentesAPI.remove(row.id);
+                      carregar();
+                    }
+                  }}
+                >
+                  Excluir
+                </button>
+              </td>
+            </tr>
+          ))}
+          {componentes.length === 0 && (
+            <tr>
+              <td colSpan={6} className="px-4 py-6 text-gray-500 text-center">
+                Nenhum componente vinculado.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {/* Modais */}
+      <SublistaModal
+        open={openSublista}
+        onClose={() => setOpenSublista(false)}
+        onSaved={carregar}
+        defaultListaPai={selLista}
+      />
+      <ComponenteModal
+        open={openComponente}
+        onClose={() => setOpenComponente(false)}
+        onSaved={carregar}
+        defaultListaPai={selLista}
       />
     </div>
-
-
-
   );
-
-
 }

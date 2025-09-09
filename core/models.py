@@ -162,6 +162,7 @@ class BOM(models.Model):
             ),
         ]
 
+# core/models.py (ADICIONAR AO FINAL DO ARQUIVO, após a classe BOM)
 class BOMSublista(models.Model):
     lista_pai = models.ForeignKey(
         ListaTecnica, on_delete=models.CASCADE, related_name="sublistas_vinculadas"
@@ -177,13 +178,13 @@ class BOMSublista(models.Model):
 
     def __str__(self):
         return f"{self.lista_pai} ➜ {self.sublista}"
-    
+
 
 class BOMComponente(models.Model):
     lista_pai = models.ForeignKey(
         ListaTecnica, on_delete=models.CASCADE, related_name="componentes_vinculados"
     )
-    # 👇 Aponta para Produto e limita escolhas a produtos do tipo "componente"
+    # Produto do tipo "componente"
     componente = models.ForeignKey(
         Produto,
         on_delete=models.CASCADE,
@@ -202,10 +203,8 @@ class BOMComponente(models.Model):
         verbose_name_plural = "Componentes em Listas Técnicas"
 
     def clean(self):
-        # Garante que o produto escolhido é realmente do tipo "componente"
         if self.componente and getattr(self.componente, "tipo", None) != "componente":
             raise ValidationError("Somente produtos do tipo 'componente' podem ser vinculados.")
 
     def __str__(self):
         return f"{self.lista_pai} • {self.componente} (qtd {self.quantidade})"
-

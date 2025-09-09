@@ -74,6 +74,38 @@ class BOMViewSet(viewsets.ModelViewSet):
     ]
     ordering_fields = ["lista_pai__codigo", "componente__codigo", "quantidade"]
 
+class BOMSublistaViewSet(viewsets.ModelViewSet):
+    queryset = BOMSublista.objects.select_related("lista_pai", "sublista").all()
+    serializer_class = BOMSublistaSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["lista_pai__nome", "sublista__nome"]
+    ordering_fields = ["lista_pai__nome", "sublista__nome"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        lista_pai = self.request.query_params.get("lista_pai")
+        if lista_pai:
+            qs = qs.filter(lista_pai_id=lista_pai)
+        return qs
+
+
+class BOMComponenteViewSet(viewsets.ModelViewSet):
+    queryset = BOMComponente.objects.select_related("lista_pai", "componente").all()
+    serializer_class = BOMComponenteSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["lista_pai__nome", "componente__nome", "comentarios"]
+    ordering_fields = ["lista_pai__nome", "componente__nome", "quantidade"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        lista_pai = self.request.query_params.get("lista_pai")
+        if lista_pai:
+            qs = qs.filter(lista_pai_id=lista_pai)
+        componente = self.request.query_params.get("componente")  # 👈 novo
+        if componente:
+            qs = qs.filter(componente_id=componente)
+        return qs
+
 
 class OrdemProducaoViewSet(viewsets.ModelViewSet):
     queryset = OrdemProducao.objects.all().order_by('-id')
@@ -766,14 +798,3 @@ class BOMFlatXLSXView(APIView):
         wb.save(response)
         return response
 
-class BOMSublistaViewSet(viewsets.ModelViewSet):
-    queryset = BOMSublista.objects.all().select_related("lista_pai", "sublista")
-    serializer_class = BOMSublistaSerializer
-    filter_backends = [filters.SearchFilter]
-    search_fields = ["lista_pai__nome", "sublista__nome"]
-
-class BOMComponenteViewSet(viewsets.ModelViewSet):
-    queryset = BOMComponente.objects.all().select_related("lista_pai", "componente")
-    serializer_class = BOMComponenteSerializer
-    filter_backends = [filters.SearchFilter]
-    search_fields = ["lista_pai__nome", "componente__nome", "comentarios"]
