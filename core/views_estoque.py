@@ -17,6 +17,8 @@ from .utils.estoque_loader import query, clear_cache, get_df
 # >>> imports para atualizar Produtos
 from .models import Produto
 
+from itertools import islice
+
 
 @method_decorator(csrf_exempt, name="dispatch")
 class UploadEstoqueView(APIView):
@@ -70,9 +72,17 @@ class UploadEstoqueView(APIView):
             codigos_no_arquivo = list(somas_por_codigo.keys())
 
             # busca apenas componentes cujo código está no arquivo
-            componentes = list(
-                Produto.objects.filter(tipo__iexact="componente", codigo__in=codigos_no_arquivo)
-            )
+            def batched(iterable, n):
+                """Divide uma lista em lotes de n elementos."""
+                it = iter(iterable)
+                while batch := list(islice(it, n)):
+                    yield batch
+
+            componentes = []
+            for lote in batched(codigos_no_arquivo, 500):  # ou 400 para maior segurança
+                componentes.extend(
+                    Produto.objects.filter(tipo__iexact="componente", codigo__in=lote)
+                )
 
             atualizados = 0
             for comp in componentes:

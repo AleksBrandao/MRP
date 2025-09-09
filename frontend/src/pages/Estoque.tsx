@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 // Use base URL relativa ou via VITE_API_URL (se já usar no projeto)
 const API_BASE =
@@ -13,7 +13,6 @@ type EstoqueRow = {
   preco_medio?: number;
   nivel_qtdoc?: number;
   lead_time_dias?: number | null;
-  // extras possíveis
   uso?: string;
   classificacao?: string;
   familia?: string;
@@ -26,41 +25,32 @@ type ApiResponse = {
 };
 
 export default function Estoque() {
-  // filtros
   const [pieza, setPieza] = useState("");
   const [org, setOrg] = useState("");
   const [warehouse, setWarehouse] = useState("");
   const [search, setSearch] = useState("");
-
-  // server limit (quanto o backend retorna por chamada)
   const [limit, setLimit] = useState(200);
 
-  // dados
   const [rows, setRows] = useState<EstoqueRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // paginação local (cliente)
   const [page, setPage] = useState(1);
   const pageSize = 50;
-  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
-  const pagedRows = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return rows.slice(start, start + pageSize);
-  }, [rows, page]);
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   const queryAndLoad = async () => {
     setLoading(true);
     setErrorMsg(null);
-    setPage(1);
     try {
       const params = new URLSearchParams();
       if (pieza.trim()) params.set("pieza", pieza.trim());
       if (org.trim()) params.set("org", org.trim());
       if (warehouse.trim()) params.set("warehouse", warehouse.trim());
       if (search.trim()) params.set("search", search.trim());
-      if (limit) params.set("limit", String(limit));
+      params.set("page", String(page));
+      params.set("limit", String(limit));
 
       const url = `${API_BASE}/estoque/?${params.toString()}`;
       const res = await fetch(url);
@@ -83,12 +73,9 @@ export default function Estoque() {
   };
 
   useEffect(() => {
-    // carregamento inicial (sem filtros)
     queryAndLoad();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [page]);
 
-  // upload opcional do arquivo de estoque
   const [uploading, setUploading] = useState(false);
   const handleUpload = async (file: File | null) => {
     if (!file) return;
@@ -107,7 +94,7 @@ export default function Estoque() {
           data?.detail || `Falha no upload (HTTP ${res.status})`
         );
       }
-      // recarrega lista após upload
+      setPage(1);
       await queryAndLoad();
     } catch (err: any) {
       setErrorMsg(err?.message || "Erro no upload");
@@ -160,7 +147,7 @@ export default function Estoque() {
         </select>
         <div className="flex gap-2">
           <button
-            onClick={queryAndLoad}
+            onClick={() => { setPage(1); queryAndLoad(); }}
             className="px-4 py-2 rounded bg-black text-white hover:opacity-90"
             disabled={loading}
           >
@@ -182,7 +169,7 @@ export default function Estoque() {
       {/* Status / Erros */}
       <div className="mb-3 text-sm text-gray-600">
         <span className="mr-4">Total (resposta): {total}</span>
-        <span>Mostrando {rows.length} itens (paginados no cliente)</span>
+        <span>Mostrando {rows.length} itens desta página</span>
       </div>
       {errorMsg && (
         <div className="mb-3 text-red-600 text-sm">Erro: {errorMsg}</div>
@@ -204,7 +191,7 @@ export default function Estoque() {
             </tr>
           </thead>
           <tbody>
-            {pagedRows.map((r, i) => (
+            {rows.map((r, i) => (
               <tr key={`${r.org}-${r.pieza}-${i}`} className="odd:bg-white even:bg-gray-50">
                 <td className="px-3 py-2 border-b">{r.org}</td>
                 <td className="px-3 py-2 border-b">{r.warehouse || "-"}</td>
@@ -213,13 +200,10 @@ export default function Estoque() {
                 <td className="px-3 py-2 border-b text-right">{r.bis_qty ?? "-"}</td>
                 <td className="px-3 py-2 border-b text-right">{r.preco_medio ?? "-"}</td>
                 <td className="px-3 py-2 border-b text-right">{r.nivel_qtdoc ?? "-"}</td>
-                <td className="px-3 py-2 border-b text-right">
-                  {r.lead_time_dias ?? "-"}
-                </td>
+                <td className="px-3 py-2 border-b text-right">{r.lead_time_dias ?? "-"}</td>
               </tr>
             ))}
-
-            {!loading && pagedRows.length === 0 && (
+            {!loading && rows.length === 0 && (
               <tr>
                 <td className="px-3 py-4 text-center text-gray-500" colSpan={8}>
                   Nenhum registro encontrado.
@@ -230,8 +214,8 @@ export default function Estoque() {
         </table>
       </div>
 
-      {/* Paginação local */}
-      <div className="flex items-center gap-2 mt-4">
+      {/* Paginação */}
+      <div className="flex items-center gap-2 mt-4 justify-center">
         <button
           className="px-3 py-1 rounded border disabled:opacity-50"
           onClick={() => setPage((p) => Math.max(1, p - 1))}

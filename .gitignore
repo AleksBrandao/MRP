@@ -23,6 +23,8 @@ local_settings.py
 .env
 .env.local
 .env.*.local
+.env.codespaces
+**/.env.codespaces
 
 # IDE
 .vscode/
@@ -58,3 +60,11 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+
+# Assistant tooling / local automations
+chatgpt-terminal-starter/
+.claude/
+
+# Binary artifacts and spreadsheets
+*.xlsx
+*.pkl
