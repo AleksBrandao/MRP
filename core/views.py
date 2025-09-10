@@ -685,7 +685,8 @@ class BOMFlatView(APIView):
                 Q(lista_pai__nome__icontains=search)   |
                 Q(componente__codigo__icontains=search)|
                 Q(componente__nome__icontains=search)  |
-                Q(comentarios__icontains=search)
+                Q(comentarios__icontains=search) |
+                Q(tipo_revisao__icontains=search)
             )
 
         linhas: list[dict] = []
@@ -720,6 +721,7 @@ class BOMFlatView(APIView):
                 "ponderacao": ponderacao,
                 "quant_ponderada": quant_pond,
                 "comentarios": item.comentarios or "",
+                "tipo_revisao": item.tipo_revisao or "",      # 👈 adicionado
             })
 
         # --- Grupos (sublistas) — só quando solicitado ---
@@ -758,6 +760,7 @@ class BOMFlatView(APIView):
                     "ponderacao": None,
                     "quant_ponderada": None,
                     "comentarios": "",           # opcional
+                    "tipo_revisao": "",      # 👈 adicionado
                 })
 
         return Response(linhas, status=status.HTTP_200_OK)
@@ -783,7 +786,7 @@ class BOMFlatXLSXView(APIView):
         ws.append([
             "Série", "Sistema", "Conjunto", "Subconjunto", "Item",
             "Código do Componente", "Nome do Componente",
-            "Quantidade", "Ponderação (%)", "Quant. Ponderada", "Comentários"
+            "Quantidade", "Ponderação (%)", "Quant. Ponderada", "Comentários", "Tipo Revisão" # 👈 adicionado
         ])
 
         # Componentes
@@ -796,7 +799,8 @@ class BOMFlatXLSXView(APIView):
                 Q(lista_pai__nome__icontains=search)   |
                 Q(componente__codigo__icontains=search)|
                 Q(componente__nome__icontains=search)  |
-                Q(comentarios__icontains=search)
+                Q(comentarios__icontains=search) |
+                Q(tipo_revisao__icontains=search)
             )
 
         for item in q_comp.order_by("lista_pai__codigo", "id"):
@@ -815,7 +819,8 @@ class BOMFlatXLSXView(APIView):
             ws.append([
                 serie_nome, sistema_nome, conjunto_nome, subconjunto_nome, item_nome,
                 comp_cod, comp_nom,
-                q, ponderacao, quant_pond, item.comentarios or ""
+                q, ponderacao, quant_pond, item.comentarios or "",
+                item.tipo_revisao or "",               # 👈 novo valor
             ])
 
         # Grupos (quando detalhado)

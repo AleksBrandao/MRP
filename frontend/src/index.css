@@ -3,22 +3,42 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Faz o bloco ocupar 100vw mesmo dentro de containers estreitos */
+.full-bleed {
+  position: relative;
+  left: 50%;
+  right: 50%;
+  margin-left: -50vw;
+  margin-right: -50vw;
+  width: 100vw;
+  padding-left: 24px;   /* “respiro” nas bordas */
+  padding-right: 24px;
+}
+@media (min-width: 1280px) {
+  .full-bleed { padding-left: 32px; padding-right: 32px; }
+}
+
+
 
 /* Evitar scrollbar horizontal em qualquer página */
 body { overflow-x: hidden; }
 
 /* Utilitário para tabelas compactas, que se ajustam sem overflow */
 @layer components {
-  .table-tight { @apply table-fixed text-xs sm:text-sm; }
+  .table-tight { @apply min-w-full table-auto text-xs sm:text-sm; }
   .table-tight th, .table-tight td { @apply px-2 py-1 sm:px-3 sm:py-2 align-top break-words; }
 }
 
-/* Força compactação mesmo quando há utilitários de padding nos elementos */
-.table-tight th, .table-tight td { padding: 0.375rem 0.5rem !important; white-space: normal; word-break: break-word; }
+/* src/index.css (ou global) */
+.table-tight th,
+.table-tight td {
+  padding: 0.375rem 0.5rem !important;
+}
 @media (max-width: 1280px) { .table-tight { font-size: 0.8125rem; } }
 @media (max-width: 1024px) { .table-tight { font-size: 0.75rem; } }
 @media (max-width: 768px)  { .table-tight { font-size: 0.6875rem; } }
 html, body, #root { height: 100%; }
+
 
 body {
   @apply bg-gray-50 text-slate-800 antialiased;

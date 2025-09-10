@@ -33,6 +33,7 @@ export default function ComponenteModal({ open, onClose, onSaved, defaultListaPa
   const [quantidade, setQuantidade] = useState<number>(1);
   const [ponderacao, setPonderacao] = useState<number>(100);
   const [comentarios, setComentarios] = useState<string>("");
+  const [tipoRevisao, setTipoRevisao] = useState<string>("");
 
   // caches dos itens selecionados (para mostrar nome)
   const [listaPaiSel, setListaPaiSel] = useState<ListaTecnica | null>(null);
@@ -106,6 +107,7 @@ export default function ComponenteModal({ open, onClose, onSaved, defaultListaPa
         quantidade,
         ponderacao,
         comentarios,
+        tipo_revisao: tipoRevisao, // 👈 converte camelCase → snake_case
       });
       onSaved?.();
       onClose();
@@ -127,6 +129,7 @@ export default function ComponenteModal({ open, onClose, onSaved, defaultListaPa
     setQuantidade(1);
     setPonderacao(100);
     setComentarios("");
+    setTipoRevisao("");
     if (!defaultListaPai) setListaPaiId(null);
     onClose();
   };

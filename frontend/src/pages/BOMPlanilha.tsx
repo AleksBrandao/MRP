@@ -20,6 +20,7 @@ type LinhaFlat = {
   ponderacao: number;
   quant_ponderada: number;
   comentarios: string;
+  tipo_revisao?: string; // 👈 adicionado (pode ser undefined se backend não migrou)
 };
 
 
@@ -114,6 +115,7 @@ export default function BOMPlanilha() {
       "Ponderação",
       "Quant. Ponderada",
       "Comentários",
+      "Tipo Revisão"   // 👈 novo
     ];
 
     const rows = linhas.map((l) => [
@@ -128,6 +130,7 @@ export default function BOMPlanilha() {
       `${l.ponderacao ?? 0}%`,
       fmt4(l.quant_ponderada),
       (l.comentarios || "").replaceAll("\n", " "),
+      l.tipo_revisao ?? "", 
     ]);
     const csv = [header, ...rows]
       .map((r) =>
@@ -151,7 +154,8 @@ export default function BOMPlanilha() {
   };
 
   return (
-    <div className="py-6">
+    <div className="py-6 max-w-screen-2xl mx-auto px-4 w-full">
+      <section className="full-bleed">   {/* 👈 novo wrapper */}
       <div className="flex items-start sm:items-end justify-between gap-4 mb-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold">BOM (Formato Planilha)</h1>
@@ -213,60 +217,63 @@ export default function BOMPlanilha() {
         </div>
       )}
 
-      <div className="rounded-xl border overflow-hidden">
-        <table className="min-w-full table-tight">
+      <div className="rounded-xl border overflow-x-auto">
+        <table className="w-full table-auto table-tight">
           <thead className="bg-gray-100 sticky top-0 z-10">
             <tr className="text-left">
-              <th className="px-4 py-3">Série</th>
-              <th className="px-4 py-3">Sistema</th>
-              <th className="px-4 py-3">Conjunto</th>
-              <th className="px-4 py-3">Subconjunto</th>
-              <th className="px-4 py-3">Item</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Série</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Sistema</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Conjunto</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Subconjunto</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Item</th>
               {/* 🔀 dividimos "Componente" em 2 */}
-              <th className="px-4 py-3">Código</th>
-              <th className="px-4 py-3">Componente</th>
-              <th className="px-4 py-3">Quantidade</th>
-              <th className="px-4 py-3">Ponderação</th>
-              <th className="px-4 py-3">Quant. Ponderada</th>
-              <th className="px-4 py-3">Comentários</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Código</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Componente</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Quantidade</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Ponderação</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Quant. Ponderada</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Comentários</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Tipo Revisão</th>  {/* 👈 novo */}
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td className="px-4 py-4" colSpan={11}>
+                <td className="px-4 py-4" colSpan={12}>
                   Carregando…
                 </td>
               </tr>
             ) : linhas.length === 0 ? (
               <tr>
-                <td className="px-4 py-4" colSpan={11}>
+                <td className="px-4 py-4" colSpan={12}>
                   Nenhum registro.
                 </td>
               </tr>
             ) : (
               linhas.map((l, i) => (
                 <tr key={i} className="border-t align-top">
-                  <td className="px-4 py-3 whitespace-pre-line">{l.serie_nome ?? l.serie ?? ""}</td>
-                  <td className="px-4 py-3 whitespace-pre-line">{l.sistema_nome ?? l.sistema ?? ""}</td>
-                  <td className="px-4 py-3 whitespace-pre-line">{l.conjunto_nome ?? l.conjunto ?? ""}</td>
-                  <td className="px-4 py-3 whitespace-pre-line">{l.subconjunto_nome ?? l.subconjunto ?? ""}</td>
-                  <td className="px-4 py-3 whitespace-pre-line">{l.item_nome ?? l.item_nivel ?? ""}</td>
+                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.serie_nome ?? l.serie ?? ""}</td>
+                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.sistema_nome ?? l.sistema ?? ""}</td>
+                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.conjunto_nome ?? l.conjunto ?? ""}</td>
+                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.subconjunto_nome ?? l.subconjunto ?? ""}</td>
+                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.item_nome ?? l.item_nivel ?? ""}</td>
 
                   {/* ✅ agora em duas colunas */}
-                  <td className="px-4 py-3">{getCompCodigo(l) || "—"}</td>
-                  <td className="px-4 py-3 whitespace-pre-line">{getCompNome(l)}</td>
+                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{getCompCodigo(l) || "—"}</td>
+                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{getCompNome(l)}</td>
 
-                  <td className="px-4 py-3">{l.quantidade ?? 0}</td>
-                  <td className="px-4 py-3">{`${l.ponderacao ?? 0}%`}</td>
-                  <td className="px-4 py-3">{fmt4(l.quant_ponderada)}</td>
-                  <td className="px-4 py-3 whitespace-pre-line">{l.comentarios}</td>
+                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.quantidade ?? 0}</td>
+                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{`${l.ponderacao ?? 0}%`}</td>
+                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{fmt4(l.quant_ponderada)}</td>
+                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.comentarios}</td>
+                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.tipo_revisao || "—"}</td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+      </section>
     </div>
   );
 }

@@ -24,7 +24,7 @@ class BOMInline(admin.TabularInline):
     fk_name = "lista_pai"
     extra = 0
     autocomplete_fields = ("componente", "sublista")
-    fields = ("componente", "sublista", "quantidade", "ponderacao_operacao",
+    fields = ("componente", "sublista", "quantidade", "ponderacao",
               "quant_ponderada_inline", "comentarios")
     readonly_fields = ("quant_ponderada_inline",)
 
@@ -150,5 +150,33 @@ class BOMSublistaAdmin(admin.ModelAdmin):
 
 @admin.register(BOMComponente)
 class BOMComponenteAdmin(admin.ModelAdmin):
-    list_display = ("lista_pai", "componente", "quantidade", "ponderacao")
-    search_fields = ("lista_pai__nome", "componente__nome", "comentarios")
+    list_display = ("lista_pai", "componente", "quantidade", "col_ponderacao", "tipo_revisao")
+    list_select_related = ("lista_pai", "componente")
+    search_fields = (
+        "lista_pai__nome", "lista_pai__codigo",
+        "componente__nome", "componente__codigo",
+        "tipo_revisao",
+    )
+    list_filter = ("lista_pai", "tipo_revisao")
+    ordering = ("lista_pai", "componente")
+    # se quiser ver/editar no form:
+    fields = ("lista_pai", "componente", "quantidade", "col_ponderacao_ro", "tipo_revisao", "comentarios")
+    readonly_fields = ("col_ponderacao_ro",)
+
+    @admin.display(description="Ponderação (%)")
+    def col_ponderacao(self, obj):
+        # tenta ambos os nomes de campo para evitar quebra
+        val = getattr(obj, "ponderacao_operacao", None)
+        if val is None and hasattr(obj, "ponderacao"):
+            val = getattr(obj, "ponderacao")
+        if val is None:
+            return "100%"  # trate None como 100 se essa é a sua regra
+        try:
+            return f"{int(Decimal(val))}%"
+        except Exception:
+            return f"{val}%"
+
+    # mesma info no form, somente leitura
+    def col_ponderacao_ro(self, obj):
+        return self.col_ponderacao(obj)
+    col_ponderacao_ro.short_description = "Ponderação (%)"

@@ -202,6 +202,7 @@ class BOMComponente(models.Model):
     ponderacao = models.DecimalField("Ponderação (%)", max_digits=6, decimal_places=2,
                                      default=100, validators=[validate_percentage])
     comentarios = models.TextField(blank=True, default="")
+    tipo_revisao = models.CharField(max_length=100, blank=True, null=True)
 
     class Meta:
         unique_together = ("lista_pai", "componente")

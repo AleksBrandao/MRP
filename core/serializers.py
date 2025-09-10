@@ -185,13 +185,25 @@ class OrdemProducaoSerializer(serializers.ModelSerializer):
 from .models import BOMSublista, BOMComponente
 
 class BOMSublistaSerializer(serializers.ModelSerializer):
-    # rótulos auxiliares (opcional)
     lista_pai_nome = serializers.CharField(source="lista_pai.nome", read_only=True)
     sublista_nome = serializers.CharField(source="sublista.nome", read_only=True)
 
     class Meta:
         model = BOMSublista
         fields = ["id", "lista_pai", "sublista", "lista_pai_nome", "sublista_nome"]
+        validators = [
+            UniqueTogetherValidator(
+                queryset=BOMSublista.objects.all(),
+                fields=["lista_pai", "sublista"],
+                message="Esta sublista já está associada a esta lista-pai."
+            )
+        ]
+
+    def validate(self, attrs):
+        if attrs["lista_pai"] == attrs["sublista"]:
+            raise serializers.ValidationError("A sublista não pode ser igual à lista-pai.")
+        return attrs
+        
 
 
 class BOMComponenteSerializer(serializers.ModelSerializer):
