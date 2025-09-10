@@ -214,16 +214,20 @@ def exportar_mrp_csv(request):
             lista_id=lista.id,
             multiplicador=ordem.quantidade,
             acumulado=resultado,
-            vistos=set(),
+            visitados=set(),
             ordem_id=ordem.id,
             lista_final_nome=lista.nome,
         )
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="resultado_mrp.csv"'
     writer = csv.writer(response)
-    writer.writerow(["Produto", "Necessidade"])
-    for comp in resultado.values():
-        writer.writerow([comp["nome"], comp["necessario"]])
+    writer.writerow(["Código", "Nome", "Necessidade"])
+    for comp_id, comp in resultado.items():
+        comp_cod  = comp.get("codigo_componente") or ""
+        comp_nome = comp.get("nome_componente") or ""
+        comp_str  = f"{comp_cod} - {comp_nome}".strip(" -") or "—"
+
+        writer.writerow([comp_cod, comp_nome, comp.get("necessario", 0)])
     return response
 
 
@@ -250,7 +254,7 @@ def exportar_mrp_excel(request):
             lista_id=lista.id,
             multiplicador=ordem.quantidade,
             acumulado=resultado,
-            vistos=set(),
+            visitados=set(),
             ordem_id=ordem.id,
             lista_final_nome=lista.nome,
         )
@@ -262,47 +266,50 @@ def exportar_mrp_excel(request):
     ws.title = "MRP Detalhado"
 
     headers = [
-        "OP",
-        "Produto Final",
-        "Qtd OP",
-        "Qtd por Unidade",
-        "Qtd Necessária",
-        "Componente",
-        "Data Necessidade",
-        "Em Estoque",
-        "Faltando",
-        "Saldo Estoque",
+        "OP","Produto Final","Qtd OP","Qtd por Unidade","Qtd Necessária",
+        "Código do Componente","Nome do Componente",   # <-- novidade
+        "Data Necessidade","Em Estoque","Faltando","Saldo Estoque",
     ]
     ws.append(headers)
 
-    for comp in resultado.values():
+    ids_sem_nome = [cid for cid, c in resultado.items() if not (c.get("nome_componente") or "").strip()]
+    mapa_nomes = {}
+    if ids_sem_nome:
+        mapa_nomes = dict(
+            Produto.objects.filter(id__in=ids_sem_nome).values_list("id", "nome")
+        )
+
+    for comp_id, comp in resultado.items():                 # <— precisamos do comp_id
         estoque_disponivel = comp["em_estoque"]
         for d in comp["detalhes"]:
             faltando = max(0, d["qtd_necessaria"] - estoque_disponivel)
             saldo = estoque_disponivel - d["qtd_necessaria"]
             try:
                 data = (
-                    
                     OrdemProducao.objects.get(id=int(d.get("ordem_producao")))
                     .data_entrega.strftime("%d/%m/%Y")
                 )
             except:
                 data = "—"
 
-            ws.append(
-                [
-                    d.get("ordem_producao", "—"),
-                    d["produto_final"] if "produto_final" in d else "—",
-                    d.get("qtd_produto", "—"),
-                    d.get("qtd_componente_por_unidade", "—"),
-                    d["qtd_necessaria"],
-                    f"{comp.get('codigo', '—')} - {comp.get('nome', '—')}",
-                    data,
-                    estoque_disponivel,
-                    faltando,
-                    saldo,
-                ]
-            )
+            # Fallback de nome (se nome_componente vier vazio)
+            comp_cod  = (comp.get("codigo_componente") or "").strip()
+            comp_nome = (comp.get("nome_componente") or "").strip() or (mapa_nomes.get(comp_id) or "").strip()
+            comp_str  = f"{comp_cod} - {comp_nome}".strip(" -") or "—"
+
+            ws.append([
+                d.get("ordem_producao", "—"),
+                d["produto_final"] if "produto_final" in d else "—",
+                d.get("qtd_produto", "—"),
+                d.get("qtd_componente_por_unidade", "—"),
+                d["qtd_necessaria"],
+                comp_cod,                     # <- nova coluna
+                comp_nome,                    # <- nova coluna
+                data,
+                estoque_disponivel,
+                faltando,
+                saldo,
+            ])
 
             estoque_disponivel = max(0, saldo)
 
@@ -340,7 +347,7 @@ def mrp_detalhado(request):
             lista_id=lista.id,
             multiplicador=ordem.quantidade,
             acumulado=resultado,
-            vistos=set(),
+            visitados=set(),
             ordem_id=ordem.id,
             lista_final_nome=lista.nome,
         )
@@ -371,72 +378,78 @@ def mrp_detalhado(request):
 
 
 def adicionar_detalhes_recursivo(
-    lista_id, multiplicador, acumulado, vistos, ordem_id, lista_final_nome, nivel=0
+    lista_id,
+    multiplicador,
+    acumulado,
+    visitados,
+    ordem_id,
+    lista_final_nome,
+    nivel=0,
+    max_niveis=50,
 ):
-    relacoes = (
-        BOM.objects
-        .filter(lista_pai_id=lista_id)
-        .select_related("componente", "sublista")
-    )
+    """
+    Monta 'acumulado' com detalhes por componente a partir do novo modelo.
+    Protege contra ciclos e limita profundidade.
+    """
+    if visitados is None:
+        visitados = set()
+    if lista_id in visitados or nivel > max_niveis:
+        return
+    visitados.add(lista_id)
 
-    for rel in relacoes:
+    # componentes diretos
+    for rel in BOMComponente.objects.filter(lista_pai_id=lista_id).select_related("componente"):
         comp = rel.componente
-        sublista = rel.sublista
-
-        # aplica ponderação por UNIDADE (None -> 100, 0 -> 0)
-        p_raw = rel.ponderacao_operacao
-        p = Decimal(100 if p_raw is None else p_raw)
-        qpond_unidade = (Decimal(rel.quantidade or 0) * p) / Decimal(100)
-
-        # se 0%, não propaga e não gera linha
+        q = Decimal(rel.quantidade or 0)
+        p = Decimal(rel.ponderacao or 0)
+        qpond_unidade = (q * p) / Decimal(100) if p else q
         if qpond_unidade == 0:
             continue
 
-        qtd_total = qpond_unidade * (Decimal(multiplicador or 1))
+        qtd_total = Decimal(multiplicador) * qpond_unidade
+        comp_id = comp.id
 
-        if comp:
-            comp_id = comp.id  # CHAVE ÚNICA, SEMPRE POR ID
+        if comp_id not in acumulado:
+            acumulado[comp_id] = {
+                "codigo_componente": comp.codigo,
+                "id_componente": comp.id,                 # <— NOVA
+                "nome_componente": comp.nome or "",       # <— AJUSTE
+                "em_estoque": Decimal(comp.estoque or 0),
+                "necessario": Decimal(0),
+                "faltando": Decimal(0),
+                "detalhes": [],
+            }
 
-            if comp_id not in acumulado:
-                acumulado[comp_id] = {
-                    "id": comp_id,                                # 👈 adicionado
-                    "produto_id": comp_id,
-                    "codigo": (getattr(comp, "codigo", "") or ""),
-                    "nome": (getattr(comp, "nome", "") or ""),
-                    "necessario": Decimal(0),
-                    "em_estoque": Decimal(getattr(comp, "estoque", 0) or 0),
-                    "faltando": Decimal(0),
-                    "lead_time": int(getattr(comp, "lead_time", 0) or 0),
-                    "detalhes": [],
-                }
+        acumulado[comp_id]["necessario"] += qtd_total
+        acumulado[comp_id]["faltando"] = max(
+            Decimal(0),
+            acumulado[comp_id]["necessario"] - acumulado[comp_id]["em_estoque"],
+        )
+        acumulado[comp_id]["detalhes"].append({
+            "ordem_producao": ordem_id,
+            "produto_final": lista_final_nome,
+            "qtd_produto": multiplicador,
+            "qtd_componente_por_unidade": qpond_unidade,
+            "qtd_necessaria": qtd_total,
+        })
 
-            acumulado[comp_id]["necessario"] += qtd_total
-            acumulado[comp_id]["faltando"] = max(
-                Decimal(0),
-                acumulado[comp_id]["necessario"] - acumulado[comp_id]["em_estoque"],
-            )
+    # sublistas
+    for rel in BOMSublista.objects.filter(lista_pai_id=lista_id).select_related("sublista"):
+        sub = rel.sublista
+        if not sub:
+            continue
+        adicionar_detalhes_recursivo(
+            lista_id=sub.id,
+            multiplicador=multiplicador,
+            acumulado=acumulado,
+            visitados=visitados,
+            ordem_id=ordem_id,
+            lista_final_nome=lista_final_nome,
+            nivel=nivel + 1,
+            max_niveis=max_niveis,
+        )
 
-            acumulado[comp_id]["detalhes"].append({
-                "ordem_producao": ordem_id,
-                "produto_final": lista_final_nome,
-                "qtd_produto": multiplicador,
-                # quantidade POR UNIDADE já ponderada
-                "qtd_componente_por_unidade": qpond_unidade,
-                "qtd_necessaria": qtd_total,
-            })
-
-
-        elif sublista:
-            # desce usando a QUANTIDADE PONDERADA como multiplicador
-            adicionar_detalhes_recursivo(
-                lista_id=sublista.id,
-                multiplicador=qtd_total,
-                acumulado=acumulado,
-                vistos=vistos,
-                ordem_id=ordem_id,
-                lista_final_nome=lista_final_nome,
-                nivel=nivel + 1,
-            )
+    visitados.remove(lista_id)
 
 @api_view(["POST"])
 def criar_lista_tecnica(request):
@@ -487,49 +500,92 @@ def historico_todos_os_produtos(request):
         })
     return Response(out, status=status.HTTP_200_OK)
 
-def explodir_lista(lista, quantidade_base, necessidades, nivel=0, codigo_pai=None):
-    for item in BOM.objects.filter(lista_pai=lista).select_related("componente", "sublista"):
-        # Ponderação correta (None→100, 0→0)
-        p_raw = item.ponderacao_operacao
-        ponderacao = Decimal(100 if p_raw is None else p_raw)
-        qpond_unidade = (Decimal(item.quantidade or 0) * ponderacao) / Decimal(100)
+def explodir_lista(
+    lista,
+    quantidade_base,
+    necessidades,
+    nivel=0,
+    codigo_pai=None,
+    visitados=None,
+    max_niveis=50,
+):
+    """
+    Agrega necessidades por componente a partir do novo modelo.
+    Protege contra ciclos com 'visitados' e limita profundidade.
+    """
+    # guardas contra ciclo/profundidade
+    if visitados is None:
+        visitados = set()
+    if lista.id in visitados:
+        # ciclo detectado (A -> ... -> A). Ignora para não travar.
+        return
+    if nivel > max_niveis:
+        # proteção extra
+        return
+
+    visitados.add(lista.id)
+    hoje = date.today()
+
+    # ---- 1) Componentes diretos
+    comps = BOMComponente.objects.filter(lista_pai=lista).select_related("componente")
+    for item in comps:
+        q = Decimal(item.quantidade or 0)
+        p = Decimal(item.ponderacao or 0)
+        qpond_unidade = (q * p) / Decimal(100) if p else q  # se p=0, usa q cru (opcional)
 
         if qpond_unidade == 0:
             continue
 
-        if item.componente:
-            comp = item.componente
-            comp_id = comp.id                                  # <<<<<<<<<< CHAVE ÚNICA
-            quant_ponderada = qpond_unidade * Decimal(quantidade_base)
+        comp = item.componente
+        comp_id = comp.id
+        necessario = qpond_unidade * Decimal(quantidade_base)
 
-            em_estoque = Decimal(comp.estoque or 0)
-            atual = Decimal(necessidades.get(comp_id, {}).get("necessario", 0))
-            novo_necessario = atual + quant_ponderada
-            faltando = max(Decimal(0), novo_necessario - em_estoque)
+        em_estoque = Decimal(comp.estoque or 0)
+        faltando = max(Decimal(0), necessario - em_estoque)
+        lead_time = int(getattr(comp, "lead_time", 0) or 0)
+        data_compra = (hoje + timedelta(days=lead_time)).isoformat() if faltando > 0 else ""
 
+        if comp_id not in necessidades:
             necessidades[comp_id] = {
-                "id": comp_id,                                  # <<<<< mande o ID pro front
-                "codigo": comp.codigo or "",                    # pode ser vazio
-                "nome": comp.nome or "",
-                "necessario": float(novo_necessario),
-                "em_estoque": float(em_estoque),
-                "faltando": float(faltando),
-                "lead_time": int(getattr(comp, "lead_time", 0) or 0),
-                "data_compra": "",
+                "id": comp_id,
+                "codigo": comp.codigo,
+                "nome": comp.nome,
+                "necessario": Decimal(0),
+                "em_estoque": em_estoque,
+                "faltando": Decimal(0),
+                "lead_time": lead_time,
+                "data_compra": data_compra,
                 "nivel": nivel,
-                "codigo_pai": codigo_pai,
-                "tipo": getattr(comp, "tipo", "componente"),
+                "codigo_pai": getattr(lista, "codigo", None),
+                "tipo": getattr(comp, "tipo", ""),
             }
 
-        elif item.sublista:
-            explodir_lista(
-                item.sublista,
-                Decimal(quantidade_base) * qpond_unidade,
-                necessidades,
-                nivel + 1,
-                codigo_pai=lista.codigo,
-            )
+        necessidades[comp_id]["necessario"] += necessario
+        necessidades[comp_id]["faltando"] = max(
+            Decimal(0),
+            necessidades[comp_id]["necessario"] - necessidades[comp_id]["em_estoque"],
+        )
+        if not necessidades[comp_id]["data_compra"] and necessidades[comp_id]["faltando"] > 0:
+            necessidades[comp_id]["data_compra"] = data_compra
 
+    # ---- 2) Sublistas (recursão)
+    for vinc in BOMSublista.objects.filter(lista_pai=lista).select_related("sublista"):
+        sub = vinc.sublista
+        if not sub:
+            continue
+        # desce mantendo a mesma quantidade_base; passa o mesmo set (push/pop)
+        explodir_lista(
+            sub,
+            Decimal(quantidade_base),
+            necessidades,
+            nivel=nivel + 1,
+            codigo_pai=getattr(lista, "codigo", None),
+            visitados=visitados,
+            max_niveis=max_niveis,
+        )
+
+    # backtrack
+    visitados.remove(lista.id)
 
 
 
