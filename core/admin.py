@@ -40,9 +40,9 @@ class BOMInline(admin.TabularInline):
 
 @admin.register(ListaTecnica)
 class ListaTecnicaAdmin(admin.ModelAdmin):
-    search_fields = ("codigo", "nome", "observacoes")
-    list_display = ("codigo", "nome", "tipo", "criado_em")
-    ordering = ("codigo",)
+    search_fields = ("nome", "observacoes")
+    list_display = ("nome", "tipo", "criado_em")
+    ordering = ("nome",)
     inlines = (BOMInline,)
 
 

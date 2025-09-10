@@ -601,192 +601,195 @@ def _codigo_nome(obj):
         return "", ""
     return (getattr(obj, "codigo", "") or "").strip(), (getattr(obj, "nome", "") or "").strip()
 
+# --- BOM (Planilha) unificado: lê BOMComponente e (opcional) BOMSublista ---
+
 class BOMFlatView(APIView):
     """
     GET /api/bom-flat/?lista_id=...&search=...&incluir_grupos=1
-    Retorna linhas em formato de planilha, agora com campos SEPARADOS:
-    <nivel>_codigo, <nivel>_nome, e componente_codigo / componente_nome.
+    Retorna linhas em formato de planilha com níveis separados e componente (código/nome).
+    Passa a consolidar:
+      - BOMComponente (linhas de componente)
+      - BOMSublista   (linhas de grupo, só se incluir_grupos=1)
     """
 
     def get(self, request, *args, **kwargs):
+        from .models import BOMComponente, BOMSublista
+
         lista_id = request.GET.get("lista_id")
         search = (request.GET.get("search") or "").strip()
+        incluir_grupos = (request.GET.get("incluir_grupos") or "").lower() in ("1", "true", "t", "yes")
 
-        qs = BOM.objects.select_related("lista_pai", "sublista", "componente")
-
-        incluir_grupos = request.GET.get("incluir_grupos")
-        if not (incluir_grupos and incluir_grupos.lower() in ("1", "true", "t", "yes")):
-            qs = qs.filter(componente__isnull=False)
-
+        # --- Componentes (linhas "de peça") ---
+        q_comp = BOMComponente.objects.select_related("lista_pai", "componente")
         if lista_id:
-            qs = qs.filter(lista_pai_id=lista_id)
-
+            q_comp = q_comp.filter(lista_pai_id=lista_id)
         if search:
-            qs = qs.filter(
-                Q(lista_pai__codigo__icontains=search)
-                | Q(lista_pai__nome__icontains=search)
-                | Q(sublista__codigo__icontains=search)
-                | Q(sublista__nome__icontains=search)
-                | Q(componente__codigo__icontains=search)
-                | Q(componente__nome__icontains=search)
-                | Q(comentarios__icontains=search)
-            )
-
-        linhas = []
-        for item in qs.order_by("lista_pai__codigo", "id"):
-            # nó de referência (como você já fazia)
-            no_ref = item.sublista or item.lista_pai
-
-            # sobe árvore até a raiz (você já tem helper pra isso)
-            cadeia = _cadeia_desde_raiz(no_ref)
-
-            # Preenche listas paralelas de códigos/nomes por nível
-            cods = ["", "", "", "", ""]
-            nomes = ["", "", "", "", ""]
-            for i, nodo in enumerate(cadeia[:5]):
-                cods[i], nomes[i] = _codigo_nome(nodo)
-
-            serie_cod, sistema_cod, conjunto_cod, subconj_cod, item_cod = cods
-            serie_nom, sistema_nom, conjunto_nom, subconj_nom, item_nom = nomes
-
-            # nível atual (0..4)
-            nivel = min(len(cadeia) - 1, 4) if cadeia else 0
-
-            raw = getattr(item, "ponderacao_operacao", None)
-            ponderacao = 100 if raw is None else float(raw)
-            q = float(item.quantidade or 0)
-            if hasattr(item, "quant_ponderada") and item.quant_ponderada is not None:
-                quant_pond = float(item.quant_ponderada)
-            else:
-                q = float(item.quantidade or 0)
-                quant_pond = q * float(ponderacao) / 100.0
-
-            comp_cod, comp_nom = _codigo_nome(item.componente)
-
-            linha = {
-                # níveis separados (sem colchetes)
-                "serie_codigo": serie_cod,
-                "serie_nome":   serie_nom,
-                "sistema_codigo": sistema_cod,
-                "sistema_nome":   sistema_nom,
-                "conjunto_codigo": conjunto_cod,
-                "conjunto_nome":   conjunto_nom,
-                "subconjunto_codigo": subconj_cod,
-                "subconjunto_nome":   subconj_nom,
-                # Item só quando o nó é realmente item
-                "item_codigo": item_cod if nivel == 4 else "",
-                "item_nome":   item_nom if nivel == 4 else "",
-                "nivel": int(nivel),
-
-                # componente separado
-                "componente_codigo": comp_cod,
-                "componente_nome":   comp_nom,
-
-                # quantitativos
-                "quantidade": q,
-                "ponderacao": float(ponderacao),
-                "quant_ponderada": float(quant_pond),
-
-                # observações
-                "comentarios": getattr(item, "comentarios", "") or "",
-            }
-
-            # (opcional) manter legacy, se quiser compat com telas antigas:
-            # linha["serie"] = serie_nom
-            # linha["sistema"] = sistema_nom
-            # linha["conjunto"] = conjunto_nom
-            # linha["subconjunto"] = subconj_nom
-            # linha["item_nivel"] = item_nom if nivel == 4 else ""
-            # linha["componente"] = f"[{comp_cod}] {comp_nom}".strip() if comp_cod else comp_nom
-
-            linhas.append(linha)
-
-        # Se você já criou o BOMFlatRowSerializer, pode validar antes de responder:
-        # from .serializers import BOMFlatRowSerializer
-        # data = BOMFlatRowSerializer(linhas, many=True).data
-        # return Response(data, status=200)
-
-        return Response(linhas, status=200)
-
-
-
-class BOMFlatXLSXView(APIView):
-    def get(self, request, *args, **kwargs):
-        lista_id = request.GET.get("lista_id")
-        search = (request.GET.get("search") or "").strip()
-        detalhado = (request.GET.get("detalhado") or "").lower() in ("1","true","t","yes")
-
-        qs = BOM.objects.select_related("lista_pai","sublista","componente")
-        if not detalhado:
-            qs = qs.filter(componente__isnull=False)
-        if lista_id:
-            qs = qs.filter(lista_pai_id=lista_id)
-        if search:
-            qs = qs.filter(
+            q_comp = q_comp.filter(
                 Q(lista_pai__codigo__icontains=search) |
-                Q(lista_pai__nome__icontains=search) |
-                Q(sublista__codigo__icontains=search) |
-                Q(sublista__nome__icontains=search) |
-                Q(componente__codigo__icontains=search) |
-                Q(componente__nome__icontains=search) |
+                Q(lista_pai__nome__icontains=search)   |
+                Q(componente__codigo__icontains=search)|
+                Q(componente__nome__icontains=search)  |
                 Q(comentarios__icontains=search)
             )
 
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "BOM"
+        linhas: list[dict] = []
 
-        # Cabeçalho: níveis por NOME e Componente separado em Código + Nome
-        header = (["Série","Sistema","Conjunto","Subconjunto","Item"]
-                  if detalhado else
-                  ["Série","Sistema","Conjunto","Subconjunto"])
-        header += ["Código","Componente","Quantidade","Ponderação","Quant. Ponderada","Comentários"]
-        ws.append(header)
+        # Monta linhas a partir do nó de referência = lista_pai
+        for item in q_comp.order_by("lista_pai__codigo", "id"):
+            cadeia = _cadeia_desde_raiz(item.lista_pai)  # RAIZ -> ... -> nó atual
 
-        for item in qs.order_by("lista_pai__codigo", "id"):
-            no_ref = item.sublista or item.lista_pai
-            cadeia = _cadeia_desde_raiz(no_ref)  # RAIZ -> ... -> nó
-
-            # Extrai NOMES (sem colchetes) para os níveis
+            # extrai nomes por nível
             nomes = ["", "", "", "", ""]
             for i, nodo in enumerate(cadeia[:5]):
-                _, nome = _codigo_nome(nodo)  # helper retorna (codigo, nome)
+                _, nome = _codigo_nome(nodo)
                 nomes[i] = nome
-
             serie_nome, sistema_nome, conjunto_nome, subconjunto_nome, item_nome = nomes
-            nivel = min(len(cadeia) - 1, 4) if cadeia else 0
 
-            # Ponderação: respeita 0; default 100 apenas se None/ausente
-            raw = getattr(item, "ponderacao_operacao", None)
-            ponderacao = 100 if raw is None else float(raw)
-
-            # Quantidade / Quantidade ponderada
+            # quantidade ponderada (seu model usa 'ponderacao')
             q = float(item.quantidade or 0)
-            if getattr(item, "quant_ponderada", None) is not None:
-                quant_pond = float(item.quant_ponderada)
-            else:
-                quant_pond = q * ponderacao / 100.0
+            ponderacao = float(item.ponderacao or 0)
+            quant_pond = q * (ponderacao / 100.0)
 
-            # Componente separado (Código + Nome)
             comp_cod, comp_nom = _codigo_nome(item.componente)
 
-            # Monta a linha conforme o cabeçalho
-            row = [serie_nome, sistema_nome, conjunto_nome, subconjunto_nome]
-            if detalhado:
-                row.append(item_nome if nivel == 4 else "")
-            row += [
-                comp_cod,                 # "Código"
-                comp_nom,                 # "Componente"
-                q,                        # "Quantidade"
-                f"{int(ponderacao)}%",    # "Ponderação"
-                quant_pond,               # "Quant. Ponderada"
-                getattr(item, "comentarios", "") or "",
-            ]
+            linhas.append({
+                "serie_nome": serie_nome,
+                "sistema_nome": sistema_nome,
+                "conjunto_nome": conjunto_nome,
+                "subconjunto_nome": subconjunto_nome,
+                "item_nome": item_nome,  # só aparece se o nó for ITEM
+                "componente_codigo": comp_cod,
+                "componente_nome": comp_nom,
+                "quantidade": q,
+                "ponderacao": ponderacao,
+                "quant_ponderada": quant_pond,
+                "comentarios": item.comentarios or "",
+            })
 
-            ws.append(row)
+        # --- Grupos (sublistas) — só quando solicitado ---
+        if incluir_grupos:
+            q_grp = BOMSublista.objects.select_related("lista_pai", "sublista")
+            if lista_id:
+                q_grp = q_grp.filter(lista_pai_id=lista_id)
+            if search:
+                q_grp = q_grp.filter(
+                    Q(lista_pai__codigo__icontains=search) |
+                    Q(lista_pai__nome__icontains=search)   |
+                    Q(sublista__codigo__icontains=search)  |
+                    Q(sublista__nome__icontains=search)
+                )
+
+            for item in q_grp.order_by("lista_pai__codigo", "id"):
+                # nó de referência (como você fazia antes): o grupo apontado
+                no_ref = item.sublista or item.lista_pai
+                cadeia = _cadeia_desde_raiz(no_ref)
+
+                nomes = ["", "", "", "", ""]
+                for i, nodo in enumerate(cadeia[:5]):
+                    _, nome = _codigo_nome(nodo)
+                    nomes[i] = nome
+                serie_nome, sistema_nome, conjunto_nome, subconjunto_nome, item_nome = nomes
+
+                linhas.append({
+                    "serie_nome": serie_nome,
+                    "sistema_nome": sistema_nome,
+                    "conjunto_nome": conjunto_nome,
+                    "subconjunto_nome": subconjunto_nome,
+                    "item_nome": item_nome,
+                    "componente_codigo": None,   # grupo não tem componente
+                    "componente_nome": None,
+                    "quantidade": None,
+                    "ponderacao": None,
+                    "quant_ponderada": None,
+                    "comentarios": "",           # opcional
+                })
+
+        return Response(linhas, status=status.HTTP_200_OK)
 
 
-        # Largura automática (limitada)
+class BOMFlatXLSXView(APIView):
+    """
+    Exporta a mesma visão (componentes + grupos quando detalhado=1) em XLSX.
+    """
+    def get(self, request, *args, **kwargs):
+        from .models import BOMComponente, BOMSublista
+        from openpyxl import Workbook
+        from openpyxl.utils import get_column_letter
+
+        lista_id = request.GET.get("lista_id")
+        search = (request.GET.get("search") or "").strip()
+        detalhado = (request.GET.get("detalhado") or "").lower() in ("1", "true", "t", "yes")
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "BOM (Planilha)"
+
+        ws.append([
+            "Série", "Sistema", "Conjunto", "Subconjunto", "Item",
+            "Código do Componente", "Nome do Componente",
+            "Quantidade", "Ponderação (%)", "Quant. Ponderada", "Comentários"
+        ])
+
+        # Componentes
+        q_comp = BOMComponente.objects.select_related("lista_pai", "componente")
+        if lista_id:
+            q_comp = q_comp.filter(lista_pai_id=lista_id)
+        if search:
+            q_comp = q_comp.filter(
+                Q(lista_pai__codigo__icontains=search) |
+                Q(lista_pai__nome__icontains=search)   |
+                Q(componente__codigo__icontains=search)|
+                Q(componente__nome__icontains=search)  |
+                Q(comentarios__icontains=search)
+            )
+
+        for item in q_comp.order_by("lista_pai__codigo", "id"):
+            cadeia = _cadeia_desde_raiz(item.lista_pai)
+            nomes = ["", "", "", "", ""]
+            for i, nodo in enumerate(cadeia[:5]):
+                _, nome = _codigo_nome(nodo)
+                nomes[i] = nome
+            serie_nome, sistema_nome, conjunto_nome, subconjunto_nome, item_nome = nomes
+
+            q = float(item.quantidade or 0)
+            ponderacao = float(item.ponderacao or 0)
+            quant_pond = q * (ponderacao / 100.0)
+            comp_cod, comp_nom = _codigo_nome(item.componente)
+
+            ws.append([
+                serie_nome, sistema_nome, conjunto_nome, subconjunto_nome, item_nome,
+                comp_cod, comp_nom,
+                q, ponderacao, quant_pond, item.comentarios or ""
+            ])
+
+        # Grupos (quando detalhado)
+        if detalhado:
+            q_grp = BOMSublista.objects.select_related("lista_pai", "sublista")
+            if lista_id:
+                q_grp = q_grp.filter(lista_pai_id=lista_id)
+            if search:
+                q_grp = q_grp.filter(
+                    Q(lista_pai__codigo__icontains=search) |
+                    Q(lista_pai__nome__icontains=search)   |
+                    Q(sublista__codigo__icontains=search)  |
+                    Q(sublista__nome__icontains=search)
+                )
+
+            for item in q_grp.order_by("lista_pai__codigo", "id"):
+                no_ref = item.sublista or item.lista_pai
+                cadeia = _cadeia_desde_raiz(no_ref)
+                nomes = ["", "", "", "", ""]
+                for i, nodo in enumerate(cadeia[:5]):
+                    _, nome = _codigo_nome(nodo)
+                    nomes[i] = nome
+                serie_nome, sistema_nome, conjunto_nome, subconjunto_nome, item_nome = nomes
+
+                ws.append([
+                    serie_nome, sistema_nome, conjunto_nome, subconjunto_nome, item_nome,
+                    "", "", "", "", "", ""  # sem componente/quantidade
+                ])
+
+        # Ajuste automático de largura (limitado)
         for col in ws.columns:
             max_len = max(len(str(c.value)) if c.value is not None else 0 for c in col)
             ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 2, 80)
@@ -797,4 +800,3 @@ class BOMFlatXLSXView(APIView):
         response["Content-Disposition"] = 'attachment; filename="bom_planilha.xlsx"'
         wb.save(response)
         return response
-

@@ -3,7 +3,7 @@ import { Routes, Route } from "react-router-dom";
 import Produtos from "./pages/Produtos";
 import MrpResultado from "./pages/MrpResultado";
 import Ordens from "./pages/Ordens";
-import BOM from "./pages/BOM";
+// import BOM from "./pages/BOM";
 import HistoricoGeral from "./pages/HistoricoGeral";
 import DetalhesMRP from "./pages/DetalhesMRP";
 import ListasTecnicas from "./pages/ListasTecnicas";
@@ -11,6 +11,8 @@ import Layout from "./components/Layout";
 import BOMPlanilha from "./pages/BOMPlanilha";
 import Estoque from "./pages/Estoque";
 import Pedidos from "./pages/Pedidos";  
+import BOMSublistas from "./pages/BOMSublistas";        // ← NOVO
+import BOMComponentes from "./pages/BOMComponentes";    // ← NOVO
 
 export default function App() {
   return (
@@ -20,7 +22,13 @@ export default function App() {
         <Route path="/produtos" element={<Produtos />} />
         <Route path="/listas-tecnicas" element={<ListasTecnicas />} />
         <Route path="/ordens" element={<Ordens />} />
-        <Route path="/bom" element={<BOM />} />
+
+        {/* NOVAS PÁGINAS */}
+        <Route path="/bom-sublistas" element={<BOMSublistas />} />
+        <Route path="/bom-componentes" element={<BOMComponentes />} />
+
+        {/* <Route path="/bom" element={<BOM />} /> */}
+
         <Route path="/bom-planilha" element={<BOMPlanilha />} />
         <Route path="/mrp" element={<MrpResultado />} />
         <Route path="/historico" element={<HistoricoGeral />} />

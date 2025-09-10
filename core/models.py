@@ -87,6 +87,12 @@ class ListaTecnica(models.Model):
             self.codigo = str(self.pk)          # ou f"LT-{self.pk}" se quiser prefixo
             super().save(update_fields=["codigo"])
 
+    def __str__(self):
+        # "8500 · Código: 8500" ou só "8500"
+        if self.codigo:
+            return f"{self.nome} · {self.codigo}"
+        return self.nome
+
 class OrdemProducao(models.Model):
     lista = models.ForeignKey('ListaTecnica', on_delete=models.CASCADE,
                               related_name='ordens')  # <- aqui

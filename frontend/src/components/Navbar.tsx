@@ -13,7 +13,13 @@ export default function Navbar() {
           <NavLink to="/produtos" className={({isActive}) => `${link} ${isActive ? active : ""}`}>Produtos</NavLink>
           <NavLink to="/listas-tecnicas" className={({isActive}) => `${link} ${isActive ? active : ""}`}>Listas Técnicas</NavLink>
           <NavLink to="/ordens" className={({isActive}) => `${link} ${isActive ? active : ""}`}>Ordens de Produção</NavLink>
-          <NavLink to="/bom" className={({isActive}) => `${link} ${isActive ? active : ""}`}>BOM</NavLink>
+
+           {/* NOVOS ITENS */}
+          <NavLink to="/bom-sublistas" className={({isActive}) => `${link} ${isActive ? active : ""}`}>BOM – Sublistas</NavLink>
+          <NavLink to="/bom-componentes" className={({isActive}) => `${link} ${isActive ? active : ""}`}>BOM – Componentes</NavLink>
+          
+
+          {/* <NavLink to="/bom" className={({isActive}) => `${link} ${isActive ? active : ""}`}>BOM</NavLink> */}
           <NavLink to="/bom-planilha" className={({isActive}) => `${link} ${isActive ? active : ""}`}>BOM (Planilha)</NavLink>
           <NavLink to="/mrp" className={({isActive}) => `${link} ${isActive ? active : ""}`}>Executar MRP</NavLink>
           <NavLink to="/historico" className={({isActive}) => `${link} ${isActive ? active : ""}`}>Histórico</NavLink>
