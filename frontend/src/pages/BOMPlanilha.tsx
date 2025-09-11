@@ -1,6 +1,7 @@
 // src/pages/BOMPlanilha.tsx
 import { useEffect, useState } from "react";
 import { BOMFlatAPI } from "../services/api";
+import { BOMComponentesAPI, BOMSublistasAPI } from "../services/api";
 
 type LinhaFlat = {
   // novos campos do endpoint
@@ -21,6 +22,12 @@ type LinhaFlat = {
   quant_ponderada: number;
   comentarios: string;
   tipo_revisao?: string; // 👈 adicionado (pode ser undefined se backend não migrou)
+
+  // 👇 novos (do backend)
+  linha_tipo?: "sublista" | "componente";
+  linha_id?: number;
+  lista_pai_id?: number | null;
+  sublista_id?: number | null;
 };
 
 
@@ -130,7 +137,7 @@ export default function BOMPlanilha() {
       `${l.ponderacao ?? 0}%`,
       fmt4(l.quant_ponderada),
       (l.comentarios || "").replaceAll("\n", " "),
-      l.tipo_revisao ?? "", 
+      l.tipo_revisao ?? "",
     ]);
     const csv = [header, ...rows]
       .map((r) =>
@@ -153,126 +160,200 @@ export default function BOMPlanilha() {
     URL.revokeObjectURL(url);
   };
 
+  async function excluirLinha(l: LinhaFlat) {
+    if (!l.linha_tipo || !l.linha_id) return alert("Linha sem referência de origem.");
+    const confirma = confirm(`Confirma excluir esta ${l.linha_tipo}?`);
+    if (!confirma) return;
+
+    if (l.linha_tipo === "componente") {
+      await BOMComponentesAPI.remove(l.linha_id);
+    } else {
+      await BOMSublistasAPI.remove(l.linha_id);
+    }
+    await fetchData();
+  }
+
+  async function editarLinha(l: LinhaFlat) {
+    if (!l.linha_tipo || !l.linha_id) return alert("Linha sem referência de origem.");
+
+    if (l.linha_tipo === "componente") {
+      const qStr = prompt("Quantidade", String(l.quantidade ?? 1));
+      if (qStr === null) return;
+      const pStr = prompt("Ponderação (%)", String(l.ponderacao ?? 0));
+      if (pStr === null) return;
+      const tipoRev = prompt("Tipo Revisão (ex.: RF/RT/...)", l.tipo_revisao ?? "") ?? "";
+      const comentarios = prompt("Comentários", l.comentarios ?? "") ?? "";
+
+      const quantidade = Number(qStr);
+      const ponderacao = Number(pStr);
+      if (!Number.isFinite(quantidade) || quantidade <= 0) return alert("Quantidade inválida.");
+      if (!Number.isFinite(ponderacao) || ponderacao < 0) return alert("Ponderação inválida.");
+
+      await BOMComponentesAPI.update(l.linha_id, {
+        quantidade,
+        ponderacao,
+        comentarios: comentarios || undefined,
+        tipo_revisao: tipoRev || undefined,
+      });
+    } else {
+      // sublista: permitir trocar a sublista (filha)
+      const nova = prompt("ID da nova sublista (lista técnica filha)", String(l.sublista_id ?? ""));
+      if (nova === null) return;
+      const sublista = Number(nova);
+      if (!Number.isFinite(sublista) || sublista <= 0) return alert("ID inválido.");
+
+      await BOMSublistasAPI.update(l.linha_id, { sublista });
+    }
+
+    await fetchData();
+  }
+
   return (
     <div className="py-6 max-w-screen-2xl mx-auto px-4 w-full">
       <section className="full-bleed">   {/* 👈 novo wrapper */}
-      <div className="flex items-start sm:items-end justify-between gap-4 mb-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold">BOM (Formato Planilha)</h1>
-          <p className="text-sm text-gray-500">
-            Visualização achatada no padrão: Série, Sistema, Conjunto, Subconjunto, <b>Item</b>,
-            <b> Componente (Código, Nome)</b>, Quantidade, Ponderação, Quant. Ponderada, Comentários.
-          </p>
-        </div>
+        <div className="flex items-start sm:items-end justify-between gap-4 mb-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold">BOM (Formato Planilha)</h1>
+            <p className="text-sm text-gray-500">
+              Visualização achatada no padrão: Série, Sistema, Conjunto, Subconjunto, <b>Item</b>,
+              <b> Componente (Código, Nome)</b>, Quantidade, Ponderação, Quant. Ponderada, Comentários.
+            </p>
+          </div>
 
-        <div className="flex flex-wrap gap-2">
-          <input
-            className="border rounded-lg px-3 py-2 w-72"
-            placeholder="Buscar (código, nome, comentário)"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <input
-            className="border rounded-lg px-3 py-2 w-52"
-            placeholder="Lista ID (opcional)"
-            value={listaId}
-            onChange={(e) => setListaId(e.target.value)}
-          />
-
-          <button
-            onClick={fetchData}
-            className="px-4 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800"
-          >
-            Aplicar
-          </button>
-
-          <label className="flex items-center gap-2 px-3 py-2 border rounded-lg bg-white">
+          <div className="flex flex-wrap gap-2">
             <input
-              type="checkbox"
-              checked={detalhado}
-              onChange={(e) => setDetalhado(e.target.checked)}
+              className="border rounded-lg px-3 py-2 w-72"
+              placeholder="Buscar (código, nome, comentário)"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
             />
-            Modo detalhado (incluir grupos)
-          </label>
+            <input
+              className="border rounded-lg px-3 py-2 w-52"
+              placeholder="Lista ID (opcional)"
+              value={listaId}
+              onChange={(e) => setListaId(e.target.value)}
+            />
 
-          <button
-            onClick={handleExportCSV}
-            className="px-4 py-2 rounded-lg border hover:bg-gray-50"
-          >
-            Exportar CSV
-          </button>
+            <button
+              onClick={fetchData}
+              className="px-4 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800"
+            >
+              Aplicar
+            </button>
 
-          <button
-            onClick={handleExportXLSX}
-            className="px-4 py-2 rounded-lg border hover:bg-gray-50"
-          >
-            Exportar XLSX
-          </button>
+            <label className="flex items-center gap-2 px-3 py-2 border rounded-lg bg-white">
+              <input
+                type="checkbox"
+                checked={detalhado}
+                onChange={(e) => setDetalhado(e.target.checked)}
+              />
+              Modo detalhado (incluir grupos)
+            </label>
+
+            <button
+              onClick={handleExportCSV}
+              className="px-4 py-2 rounded-lg border hover:bg-gray-50"
+            >
+              Exportar CSV
+            </button>
+
+            <button
+              onClick={handleExportXLSX}
+              className="px-4 py-2 rounded-lg border hover:bg-gray-50"
+            >
+              Exportar XLSX
+            </button>
+          </div>
         </div>
-      </div>
 
-      {errorMsg && (
-        <div className="mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3">
-          {errorMsg}
-        </div>
-      )}
+        {errorMsg && (
+          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3">
+            {errorMsg}
+          </div>
+        )}
 
-      <div className="rounded-xl border overflow-x-auto">
-        <table className="w-full table-auto table-tight">
-          <thead className="bg-gray-100 sticky top-0 z-10">
-            <tr className="text-left">
-              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Série</th>
-              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Sistema</th>
-              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Conjunto</th>
-              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Subconjunto</th>
-              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Item</th>
-              {/* 🔀 dividimos "Componente" em 2 */}
-              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Código</th>
-              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Componente</th>
-              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Quantidade</th>
-              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Ponderação</th>
-              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Quant. Ponderada</th>
-              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Comentários</th>
-              <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Tipo Revisão</th>  {/* 👈 novo */}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td className="px-4 py-4" colSpan={12}>
-                  Carregando…
-                </td>
+        <div className="rounded-xl border overflow-x-auto">
+          <table className="w-full table-auto table-tight">
+            <thead className="bg-gray-100 sticky top-0 z-10">
+              <tr className="text-left">
+                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Série</th>
+                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Sistema</th>
+                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Conjunto</th>
+                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Subconjunto</th>
+                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Item</th>
+                {/* 🔀 dividimos "Componente" em 2 */}
+                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Código</th>
+                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Componente</th>
+                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Quantidade</th>
+                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Ponderação</th>
+                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Quant. Ponderada</th>
+                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Comentários</th>
+                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Tipo Revisão</th>  {/* 👈 novo */}
+                <th className="px-4 py-2 text-right whitespace-nowrap">Ações</th>
               </tr>
-            ) : linhas.length === 0 ? (
-              <tr>
-                <td className="px-4 py-4" colSpan={12}>
-                  Nenhum registro.
-                </td>
-              </tr>
-            ) : (
-              linhas.map((l, i) => (
-                <tr key={i} className="border-t align-top">
-                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.serie_nome ?? l.serie ?? ""}</td>
-                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.sistema_nome ?? l.sistema ?? ""}</td>
-                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.conjunto_nome ?? l.conjunto ?? ""}</td>
-                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.subconjunto_nome ?? l.subconjunto ?? ""}</td>
-                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.item_nome ?? l.item_nivel ?? ""}</td>
-
-                  {/* ✅ agora em duas colunas */}
-                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{getCompCodigo(l) || "—"}</td>
-                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{getCompNome(l)}</td>
-
-                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.quantidade ?? 0}</td>
-                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{`${l.ponderacao ?? 0}%`}</td>
-                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{fmt4(l.quant_ponderada)}</td>
-                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.comentarios}</td>
-                  <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.tipo_revisao || "—"}</td>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td className="px-4 py-4" colSpan={12}>
+                    Carregando…
+                  </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ) : linhas.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-4" colSpan={12}>
+                    Nenhum registro.
+                  </td>
+                </tr>
+              ) : (
+                linhas.map((l, i) => (
+                  <tr key={i} className="border-t align-top">
+                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.serie_nome ?? l.serie ?? ""}</td>
+                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.sistema_nome ?? l.sistema ?? ""}</td>
+                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.conjunto_nome ?? l.conjunto ?? ""}</td>
+                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.subconjunto_nome ?? l.subconjunto ?? ""}</td>
+                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.item_nome ?? l.item_nivel ?? ""}</td>
+
+                    {/* ✅ agora em duas colunas */}
+                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{getCompCodigo(l) || "—"}</td>
+                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{getCompNome(l)}</td>
+
+                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.quantidade ?? 0}</td>
+                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{`${l.ponderacao ?? 0}%`}</td>
+                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{fmt4(l.quant_ponderada)}</td>
+                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.comentarios}</td>
+                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.tipo_revisao || "—"}</td>
+
+                    <td className="px-4 py-2 text-right whitespace-nowrap">
+                      {l.linha_tipo && l.linha_id ? (
+                        <>
+                          <button
+                            onClick={() => editarLinha(l)}
+                            className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-gray-100"
+                            title="Editar"
+                          >
+                            ✏️ <span className="hidden sm:inline">Editar</span>
+                          </button>
+                          <button
+                            onClick={() => excluirLinha(l)}
+                            className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-red-50 text-red-600"
+                            title="Excluir"
+                          >
+                            🗑️ <span className="hidden sm:inline">Excluir</span>
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+
+
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );

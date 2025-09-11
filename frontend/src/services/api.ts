@@ -138,10 +138,11 @@ export type BOMSublista = {
 };
 
 export const BOMSublistasAPI = {
-  // aceita filtros como ?lista_pai=, ?sublista=, paginação, etc.
   list:   (params?: any) => api.get<MaybePaged<BOMSublista>>("/bom-sublistas/", { params }),
   create: (data: { lista_pai: number; sublista: number }) =>
     api.post<BOMSublista>("/bom-sublistas/", data),
+  update: (id: number, data: Partial<{ lista_pai: number; sublista: number }>) =>
+    api.patch<BOMSublistas>(`/bom-sublistas/${id}/`, data),
   remove: (id: number) => api.delete<void>(`/bom-sublistas/${id}/`),
 };
 

@@ -722,6 +722,11 @@ class BOMFlatView(APIView):
                 "quant_ponderada": quant_pond,
                 "comentarios": item.comentarios or "",
                 "tipo_revisao": item.tipo_revisao or "",      # 👈 adicionado
+
+                    # 👇 ADIÇÕES para ação no frontend
+                "linha_tipo": "componente",
+                "linha_id": item.id,
+                "lista_pai_id": getattr(item.lista_pai, "id", None),
             })
 
         # --- Grupos (sublistas) — só quando solicitado ---
@@ -761,6 +766,12 @@ class BOMFlatView(APIView):
                     "quant_ponderada": None,
                     "comentarios": "",           # opcional
                     "tipo_revisao": "",      # 👈 adicionado
+
+                     # 👇 ADIÇÕES para ação no frontend
+                    "linha_tipo": "sublista",
+                    "linha_id": item.id,  # id do BOMSublista
+                    "lista_pai_id": getattr(item.lista_pai, "id", None),
+                    "sublista_id": getattr(item.sublista, "id", None),
                 })
 
         return Response(linhas, status=status.HTTP_200_OK)
