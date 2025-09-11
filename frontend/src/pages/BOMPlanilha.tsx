@@ -1,360 +1,307 @@
-// src/pages/BOMPlanilha.tsx
-import { useEffect, useState } from "react";
-import { BOMFlatAPI } from "../services/api";
+// frontend/src/pages/BOMPlanilha.tsx
+import { useEffect, useMemo, useState } from "react";
+import api from "../services/http";
 import { BOMComponentesAPI, BOMSublistasAPI } from "../services/api";
+import ModalEditarComponente from "../components/ModalEditarComponente";
+import ModalEditarSublista from "../components/ModalEditarSublista";
 
 type LinhaFlat = {
-  // novos campos do endpoint
-  serie_nome?: string; sistema_nome?: string; conjunto_nome?: string;
-  subconjunto_nome?: string; item_nome?: string;
+  // Hierarquia/textos (backend)
+  serie_nome?: string | null;
+  sistema_nome?: string | null;
+  conjunto_nome?: string | null;
+  subconjunto_nome?: string | null;
+  item_nome?: string | null;
 
-  // legado (se ainda vier)
-  serie?: string; sistema?: string; conjunto?: string;
-  subconjunto?: string; item_nivel?: string;
-
-  // componente separado (novo) + legado
   componente_codigo?: string | null;
   componente_nome?: string | null;
-  componente?: string; // legado
 
-  quantidade: number;
-  ponderacao: number;
-  quant_ponderada: number;
-  comentarios: string;
-  tipo_revisao?: string; // 👈 adicionado (pode ser undefined se backend não migrou)
+  quantidade?: number | null;
+  ponderacao?: number | null;        // percentual (ex: 10)
+  quant_ponderada?: number | null;   // quantidade * ponderacao
+  comentarios?: string | null;
+  tipo_revisao?: string | null;
 
-  // 👇 novos (do backend)
-  linha_tipo?: "sublista" | "componente";
-  linha_id?: number;
+  // Campos para a coluna Ações
+  linha_tipo?: "componente" | "sublista" | null;
+  linha_id?: number | null;
   lista_pai_id?: number | null;
   sublista_id?: number | null;
 };
 
+type ListParams = {
+  search?: string;
+  lista_id?: number | string;
+  incluir_grupos?: "1" | undefined;
+  limit?: number;
+};
+
+const BOMFlatAPI = {
+  list: (params?: ListParams) => api.get("/bom-flat/", { params }),
+};
 
 export default function BOMPlanilha() {
   const [linhas, setLinhas] = useState<LinhaFlat[]>([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // filtros
   const [search, setSearch] = useState("");
-  const [listaId, setListaId] = useState<string>("");
-  const [detalhado, setDetalhado] = useState<boolean>(false); // controla inclusão de grupos
+  const [listaId, setListaId] = useState<number | string | undefined>(undefined);
+  const [incluirGrupos, setIncluirGrupos] = useState<boolean>(false);
+
+  // estados dos modais
+  const [editCompOpen, setEditCompOpen] = useState(false);
+  const [editSubOpen, setEditSubOpen] = useState(false);
+  const [linhaEdit, setLinhaEdit] = useState<LinhaFlat | null>(null);
+
+  useEffect(() => {
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listaId, incluirGrupos]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       setErrorMsg(null);
-      const { data } = await BOMFlatAPI.list({
+
+      const params: ListParams = {
         search: search || undefined,
         lista_id: listaId || undefined,
-        incluir_grupos: detalhado ? "1" : undefined, // inclui grupos no modo detalhado
-      });
-      setLinhas(data);
+        incluir_grupos: incluirGrupos ? "1" : undefined,
+        // limit: 500, // use se o backend suportar
+      };
+
+      const { data } = await BOMFlatAPI.list(params);
+
+      // aceita formato lista simples ou paginado { results: [...] }
+      const brutas: any[] = (Array.isArray(data) ? data : (data?.results ?? [])) as any[];
+
+      // *** PRESERVAR TODOS OS CAMPOS ***
+      // e normalizar nomes caso algum ambiente retorne camelCase
+      const linhasComOrigem: LinhaFlat[] = brutas.map((r: any) => ({
+        ...r,
+        linha_tipo:   r.linha_tipo   ?? r.linhaTipo   ?? null,
+        linha_id:     r.linha_id     ?? r.linhaId     ?? null,
+        lista_pai_id: r.lista_pai_id ?? r.listaPaiId  ?? null,
+        sublista_id:  r.sublista_id  ?? r.sublistaId  ?? null,
+      }));
+
+      setLinhas(linhasComOrigem);
     } catch (e: any) {
       console.error("Erro ao carregar BOM flat:", e);
-      setErrorMsg("Não foi possível carregar os dados. Verifique a API /api/bom-flat/.");
+      setErrorMsg(e?.response?.data?.detail || "Erro ao carregar BOM (Planilha).");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const fmt4 = (v: number) =>
-    (v ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-
-  // helpers para compatibilidade quando só houver 'componente' (string única)
-  const getCompCodigo = (l: LinhaFlat) => {
-    if (l.componente_codigo) return l.componente_codigo;
-    if (l.componente && /^\s*\[([^\]]+)\]/.test(l.componente)) {
-      // extrai o que estiver entre colchetes no início, ex: "[ABC123] Nome do item"
-      const m = l.componente.match(/^\s*\[([^\]]+)\]/);
-      return m ? m[1] : "";
-    }
-    return "";
-  };
-  const getCompNome = (l: LinhaFlat) => {
-    if (l.componente_nome) return l.componente_nome;
-    if (l.componente) {
-      // remove prefixo "[...]" se existir
-      return l.componente.replace(/^\s*\[[^\]]+\]\s*/, "");
-    }
-    return "";
-  };
-
-  const handleExportXLSX = async () => {
-    try {
-      const params = new URLSearchParams();
-      if (search) params.set("search", search);
-      if (listaId) params.set("lista_id", listaId);
-      if (detalhado) params.set("detalhado", "1"); // export XLSX inclui grupos quando detalhado
-
-      const resp = await fetch(`/api/bom-flat-xlsx/?${params.toString()}`, {
-        method: "GET",
-      });
-      if (!resp.ok) throw new Error("Falha ao gerar XLSX");
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "bom_planilha.xlsx";
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error(e);
-      alert("Não foi possível exportar o XLSX.");
-    }
-  };
-
-  const handleExportCSV = () => {
-    const header = [
-      "Série",
-      "Sistema",
-      "Conjunto",
-      "Subconjunto",
-      "Item",                 // sempre presente
-      "Código",  // ✅ novo
-      "Componente",    // ✅ novo
-      "Quantidade",
-      "Ponderação",
-      "Quant. Ponderada",
-      "Comentários",
-      "Tipo Revisão"   // 👈 novo
-    ];
-
-    const rows = linhas.map((l) => [
-      l.serie_nome ?? l.serie ?? "",
-      l.sistema_nome ?? l.sistema ?? "",
-      l.conjunto_nome ?? l.conjunto ?? "",
-      l.subconjunto_nome ?? l.subconjunto ?? "",
-      l.item_nome ?? l.item_nivel ?? "",
-      getCompCodigo(l),
-      getCompNome(l),
-      String(l.quantidade ?? 0),
-      `${l.ponderacao ?? 0}%`,
-      fmt4(l.quant_ponderada),
-      (l.comentarios || "").replaceAll("\n", " "),
-      l.tipo_revisao ?? "",
-    ]);
-    const csv = [header, ...rows]
-      .map((r) =>
-        r
-          .map((v) => {
-            const s = String(v ?? "");
-            const needsQuotes = /[;"\n]/.test(s);
-            return needsQuotes ? `"${s.replaceAll('"', '""')}"` : s;
-          })
-          .join(";")
-      )
-      .join("\n");
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "bom_planilha.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   async function excluirLinha(l: LinhaFlat) {
-    if (!l.linha_tipo || !l.linha_id) return alert("Linha sem referência de origem.");
-    const confirma = confirm(`Confirma excluir esta ${l.linha_tipo}?`);
-    if (!confirma) return;
+    try {
+      if (!l.linha_tipo || !l.linha_id) return;
+      if (!confirm(`Confirma excluir esta ${l.linha_tipo}?`)) return;
 
-    if (l.linha_tipo === "componente") {
-      await BOMComponentesAPI.remove(l.linha_id);
-    } else {
-      await BOMSublistasAPI.remove(l.linha_id);
+      if (l.linha_tipo === "componente") {
+        await BOMComponentesAPI.remove(l.linha_id);
+      } else {
+        await BOMSublistasAPI.remove(l.linha_id);
+      }
+      await fetchData();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || "Erro ao excluir.");
     }
-    await fetchData();
   }
 
-  async function editarLinha(l: LinhaFlat) {
-    if (!l.linha_tipo || !l.linha_id) return alert("Linha sem referência de origem.");
-
+  function editarLinha(l: LinhaFlat) {
+    if (!l?.linha_tipo || !l?.linha_id) return;
+    setLinhaEdit(l);
     if (l.linha_tipo === "componente") {
-      const qStr = prompt("Quantidade", String(l.quantidade ?? 1));
-      if (qStr === null) return;
-      const pStr = prompt("Ponderação (%)", String(l.ponderacao ?? 0));
-      if (pStr === null) return;
-      const tipoRev = prompt("Tipo Revisão (ex.: RF/RT/...)", l.tipo_revisao ?? "") ?? "";
-      const comentarios = prompt("Comentários", l.comentarios ?? "") ?? "";
-
-      const quantidade = Number(qStr);
-      const ponderacao = Number(pStr);
-      if (!Number.isFinite(quantidade) || quantidade <= 0) return alert("Quantidade inválida.");
-      if (!Number.isFinite(ponderacao) || ponderacao < 0) return alert("Ponderação inválida.");
-
-      await BOMComponentesAPI.update(l.linha_id, {
-        quantidade,
-        ponderacao,
-        comentarios: comentarios || undefined,
-        tipo_revisao: tipoRev || undefined,
-      });
+      setEditCompOpen(true);
     } else {
-      // sublista: permitir trocar a sublista (filha)
-      const nova = prompt("ID da nova sublista (lista técnica filha)", String(l.sublista_id ?? ""));
-      if (nova === null) return;
-      const sublista = Number(nova);
-      if (!Number.isFinite(sublista) || sublista <= 0) return alert("ID inválido.");
-
-      await BOMSublistasAPI.update(l.linha_id, { sublista });
+      setEditSubOpen(true);
     }
-
-    await fetchData();
   }
+
+  const linhasFiltradas = useMemo(() => {
+    const term = (search || "").trim().toLowerCase();
+    if (!term) return linhas;
+
+    // filtro simples por texto em alguns campos (ajuste se quiser)
+    return linhas.filter((l) => {
+      const combo = [
+        l.serie_nome,
+        l.sistema_nome,
+        l.conjunto_nome,
+        l.subconjunto_nome,
+        l.item_nome,
+        l.componente_codigo,
+        l.componente_nome,
+        l.tipo_revisao,
+        l.comentarios,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return combo.includes(term);
+    });
+  }, [linhas, search]);
 
   return (
-    <div className="py-6 max-w-screen-2xl mx-auto px-4 w-full">
+    <div className="p-4 space-y-4">
       <section className="full-bleed">   {/* 👈 novo wrapper */}
-        <div className="flex items-start sm:items-end justify-between gap-4 mb-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-bold">BOM (Formato Planilha)</h1>
-            <p className="text-sm text-gray-500">
-              Visualização achatada no padrão: Série, Sistema, Conjunto, Subconjunto, <b>Item</b>,
-              <b> Componente (Código, Nome)</b>, Quantidade, Ponderação, Quant. Ponderada, Comentários.
-            </p>
-          </div>
 
-          <div className="flex flex-wrap gap-2">
+      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-xl font-semibold">BOM (Planilha)</h1>
+        <div className="flex flex-wrap gap-2 items-center">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar..."
+            className="border rounded-lg px-3 py-2 text-sm"
+          />
+          <input
+            value={listaId ?? ""}
+            onChange={(e) => setListaId(e.target.value ? Number(e.target.value) : undefined)}
+            placeholder="Lista ID"
+            className="border rounded-lg px-3 py-2 text-sm w-28"
+          />
+          <label className="inline-flex items-center gap-2 text-sm">
             <input
-              className="border rounded-lg px-3 py-2 w-72"
-              placeholder="Buscar (código, nome, comentário)"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              type="checkbox"
+              checked={incluirGrupos}
+              onChange={(e) => setIncluirGrupos(e.target.checked)}
             />
-            <input
-              className="border rounded-lg px-3 py-2 w-52"
-              placeholder="Lista ID (opcional)"
-              value={listaId}
-              onChange={(e) => setListaId(e.target.value)}
-            />
-
-            <button
-              onClick={fetchData}
-              className="px-4 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800"
-            >
-              Aplicar
-            </button>
-
-            <label className="flex items-center gap-2 px-3 py-2 border rounded-lg bg-white">
-              <input
-                type="checkbox"
-                checked={detalhado}
-                onChange={(e) => setDetalhado(e.target.checked)}
-              />
-              Modo detalhado (incluir grupos)
-            </label>
-
-            <button
-              onClick={handleExportCSV}
-              className="px-4 py-2 rounded-lg border hover:bg-gray-50"
-            >
-              Exportar CSV
-            </button>
-
-            <button
-              onClick={handleExportXLSX}
-              className="px-4 py-2 rounded-lg border hover:bg-gray-50"
-            >
-              Exportar XLSX
-            </button>
-          </div>
+            Incluir grupos (sublistas)
+          </label>
+          <button
+            onClick={fetchData}
+            className="rounded-xl px-3 py-2 text-sm border hover:bg-gray-50"
+          >
+            Aplicar
+          </button>
         </div>
+      </header>
 
-        {errorMsg && (
-          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3">
-            {errorMsg}
-          </div>
-        )}
+      {errorMsg && (
+        <div className="text-red-600 text-sm border border-red-200 bg-red-50 rounded-lg px-3 py-2">
+          {errorMsg}
+        </div>
+      )}
 
-        <div className="rounded-xl border overflow-x-auto">
-          <table className="w-full table-auto table-tight">
-            <thead className="bg-gray-100 sticky top-0 z-10">
-              <tr className="text-left">
-                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Série</th>
-                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Sistema</th>
-                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Conjunto</th>
-                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Subconjunto</th>
-                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Item</th>
-                {/* 🔀 dividimos "Componente" em 2 */}
-                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Código</th>
-                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Componente</th>
-                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Quantidade</th>
-                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Ponderação</th>
-                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Quant. Ponderada</th>
-                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Comentários</th>
-                <th className="px-4 py-2 text-left whitespace-nowrap break-normal">Tipo Revisão</th>  {/* 👈 novo */}
-                <th className="px-4 py-2 text-right whitespace-nowrap">Ações</th>
+      <div className="rounded-xl border overflow-x-hidden">
+        <table className="table-tight w-full table-fixed">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-2 text-left whitespace-nowrap">Série</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap">Sistema</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap">Conjunto</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap">Subconjunto</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap">Item</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap">Código</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap">Componente / Grupo</th>
+              <th className="px-4 py-2 text-right whitespace-nowrap">Qtd</th>
+              <th className="px-4 py-2 text-right whitespace-nowrap">Ponderação (%)</th>
+              <th className="px-4 py-2 text-right whitespace-nowrap">Qtd Ponderada</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap">Tipo Revisão</th>
+              <th className="px-4 py-2 text-left whitespace-nowrap">Comentários</th>
+              <th className="px-4 py-2 text-right whitespace-nowrap">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td className="px-4 py-6 text-sm text-gray-500" colSpan={13}>
+                  Carregando...
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td className="px-4 py-4" colSpan={12}>
-                    Carregando…
+            ) : linhasFiltradas.length === 0 ? (
+              <tr>
+                <td className="px-4 py-6 text-sm text-gray-500" colSpan={13}>
+                  Nenhum registro encontrado.
+                </td>
+              </tr>
+            ) : (
+              linhasFiltradas.map((l, idx) => (
+                <tr key={`${l.linha_tipo ?? "na"}-${l.linha_id ?? idx}-${idx}`} className="border-t">
+                  <td className="px-4 py-2">{l.serie_nome ?? ""}</td>
+                  <td className="px-4 py-2">{l.sistema_nome ?? ""}</td>
+                  <td className="px-4 py-2">{l.conjunto_nome ?? ""}</td>
+                  <td className="px-4 py-2">{l.subconjunto_nome ?? ""}</td>
+                  <td className="px-4 py-2">{l.item_nome ?? ""}</td>
+                  <td className="px-4 py-2">{l.componente_codigo ?? ""}</td>
+                  <td className="px-4 py-2">{l.componente_nome ?? ""}</td>
+                  <td className="px-4 py-2 text-right">{fmtNumber(l.quantidade)}</td>
+                  <td className="px-4 py-2 text-right">{fmtNumber(l.ponderacao)}</td>
+                  <td className="px-4 py-2 text-right">{fmtNumber(l.quant_ponderada)}</td>
+                  <td className="px-4 py-2">{l.tipo_revisao ?? ""}</td>
+                  <td className="px-4 py-2">{l.comentarios ?? ""}</td>
+
+                  <td className="px-4 py-2 text-right whitespace-nowrap">
+                    {l.linha_tipo && l.linha_id ? (
+                      <>
+                        <button
+                          onClick={() => editarLinha(l)}
+                          className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-gray-100"
+                          title="Editar"
+                        >
+                          ✏️ <span className="hidden sm:inline">Editar</span>
+                        </button>
+                        <button
+                          onClick={() => excluirLinha(l)}
+                          className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-red-50 text-red-600"
+                          title="Excluir"
+                        >
+                          🗑️ <span className="hidden sm:inline">Excluir</span>
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
                   </td>
                 </tr>
-              ) : linhas.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-4" colSpan={12}>
-                    Nenhum registro.
-                  </td>
-                </tr>
-              ) : (
-                linhas.map((l, i) => (
-                  <tr key={i} className="border-t align-top">
-                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.serie_nome ?? l.serie ?? ""}</td>
-                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.sistema_nome ?? l.sistema ?? ""}</td>
-                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.conjunto_nome ?? l.conjunto ?? ""}</td>
-                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.subconjunto_nome ?? l.subconjunto ?? ""}</td>
-                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.item_nome ?? l.item_nivel ?? ""}</td>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
-                    {/* ✅ agora em duas colunas */}
-                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{getCompCodigo(l) || "—"}</td>
-                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{getCompNome(l)}</td>
+      {/* Modais */}
+      <ModalEditarComponente
+        open={editCompOpen}
+        onClose={() => { setEditCompOpen(false); setLinhaEdit(null); }}
+        onSaved={fetchData}
+        linha={{
+          linha_id: linhaEdit?.linha_id as number,
+          quantidade: linhaEdit?.quantidade,
+          ponderacao: linhaEdit?.ponderacao,
+          tipo_revisao: linhaEdit?.tipo_revisao,
+          comentarios: linhaEdit?.comentarios,
+          componente_nome: linhaEdit?.componente_nome,
+          componente_codigo: linhaEdit?.componente_codigo,
+        }}
+      />
 
-                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.quantidade ?? 0}</td>
-                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{`${l.ponderacao ?? 0}%`}</td>
-                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{fmt4(l.quant_ponderada)}</td>
-                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.comentarios}</td>
-                    <td className="px-4 py-2 text-left whitespace-nowrap break-normal">{l.tipo_revisao || "—"}</td>
-
-                    <td className="px-4 py-2 text-right whitespace-nowrap">
-                      {l.linha_tipo && l.linha_id ? (
-                        <>
-                          <button
-                            onClick={() => editarLinha(l)}
-                            className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-gray-100"
-                            title="Editar"
-                          >
-                            ✏️ <span className="hidden sm:inline">Editar</span>
-                          </button>
-                          <button
-                            onClick={() => excluirLinha(l)}
-                            className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-red-50 text-red-600"
-                            title="Excluir"
-                          >
-                            🗑️ <span className="hidden sm:inline">Excluir</span>
-                          </button>
-                        </>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
-
-
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+      <ModalEditarSublista
+        open={editSubOpen}
+        onClose={() => { setEditSubOpen(false); setLinhaEdit(null); }}
+        onSaved={fetchData}
+        linha={{
+          linha_id: linhaEdit?.linha_id as number,
+          sublista_id: linhaEdit?.sublista_id,
+          lista_pai_id: linhaEdit?.lista_pai_id,
+        }}
+      />
       </section>
     </div>
   );
+}
+
+/** Util: formata número simples (sem locale para não “quebrar” CSV/edição).
+ *  Ajuste para Intl.NumberFormat se preferir.
+ */
+function fmtNumber(v?: number | null) {
+  if (v === null || v === undefined || Number.isNaN(v)) return "";
+  const r = Math.round((v + Number.EPSILON) * 100) / 100;
+  return r.toFixed(2); // "6.80", "4.20", etc.
 }
