@@ -21,6 +21,7 @@ from .views import BOMFlatView, BOMFlatXLSXView
 
 from .views_estoque import UploadEstoqueView, ConsultaEstoqueView
 from .views_pedidos import UploadPedidosView, ConsultaPedidosView
+from .views import BOMPlanilhaJSON, BOMPlanilhaCSV
 
 
 router = DefaultRouter()
@@ -35,6 +36,9 @@ router.register(r"bom-componentes", BOMComponenteViewSet, basename="bom-componen
 urlpatterns = [
     path('api/bom-flat/', BOMFlatView.as_view(), name='bom-flat'),
     path('api/bom-flat-xlsx/', BOMFlatXLSXView.as_view(), name='bom-flat-xlsx'),
+
+    path("api/exports/bom/planilha.json", BOMPlanilhaJSON.as_view(), name="bom-planilha-json"),
+    path("api/exports/bom/planilha.csv",  BOMPlanilhaCSV.as_view(),  name="bom-planilha-csv"),
 
     path('api/', include(router.urls)),
     # path('api/listas-tecnicas/', criar_lista_tecnica),  # sobrescreve o ViewSet, se houver
@@ -57,5 +61,8 @@ urlpatterns = [
 
     path("api/pedidos/upload/", UploadPedidosView.as_view(), name="upload-pedidos"),
     path("api/pedidos/",       ConsultaPedidosView.as_view(), name="consulta-pedidos"),
+
+    # path("api/bom/planilha.json", BOMPlanilhaJSON.as_view(), name="bom-planilha-json"),
+    # path("api/bom/planilha.csv",  BOMPlanilhaCSV.as_view(),  name="bom-planilha-csv"),
     
 ]

@@ -3,10 +3,10 @@ from datetime import date, timedelta
 from io import BytesIO
 import csv
 from decimal import Decimal
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch, Q, F, Value, DecimalField, FloatField, ExpressionWrapper 
+from django.db.models.functions import Coalesce, Round
 import logging
-
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from rest_framework import viewsets, filters, status
 from rest_framework.views import APIView
 
@@ -872,3 +872,147 @@ class BOMFlatXLSXView(APIView):
         response["Content-Disposition"] = 'attachment; filename="bom_planilha.xlsx"'
         wb.save(response)
         return response
+
+# JSON
+class BOMPlanilhaJSON(APIView):
+    """
+    GET /api/exports/bom/planilha.json?lista_id=...&search=...&limit=...&offset=...
+    - Usa lista_pai (FK) e ponderacao (número: 10 = 10%)
+    - Calcula quant_ponderada em tempo real: quantidade * (ponderacao/100) se houver ponderacao; senão, quantidade
+    """
+    def get(self, request):
+        lista_id = request.GET.get("lista_id")
+        search   = (request.GET.get("search") or "").strip()
+        limit    = int(request.GET.get("limit") or 5000)
+        offset   = int(request.GET.get("offset") or 0)
+
+        qs = (BOMComponente.objects
+              .select_related("lista_pai", "componente"))
+
+        if lista_id:
+            qs = qs.filter(lista_pai_id=lista_id)
+
+        if search:
+            qs = qs.filter(
+                componente__nome__icontains=search
+            ) | qs.filter(
+                componente__codigo__icontains=search
+            ) | qs.filter(
+                lista_pai__nome__icontains=search
+            )
+
+        # quant_ponderada = quantidade * (Coalesce(ponderacao,0)/100) se ponderacao > 0; senão, quantidade
+        # Implementação: sempre computamos quantidade * (ponderacao/100); se ponderacao nula/0, resultado é 0,
+        # então somamos um termo alternativo para quando ponderacao=0: quantidade * (1 - step),
+        # mas isso complica no SQL. Mais simples: use Coalesce e trate como:
+        #   qp = quantidade * (Coalesce(ponderacao, 0) / 100.0)
+        # e se ponderacao == 0, cai para 0. Para manter a lógica "sem ponderação => usar quantidade",
+        # calculamos: qp = quantidade * (Coalesce(NULLIF(ponderacao,0), 100) / 100)
+        # Como não temos NULLIF direto, faremos via Case/When.
+
+        from django.db.models import Case, When, FloatField
+
+        qp_expr = Case(
+            When(ponderacao__gt=0,
+                 then=ExpressionWrapper(
+                     F("quantidade") * (Coalesce(F("ponderacao"), Value(0.0)) / Value(100.0)),
+                     output_field=FloatField()
+                 )),
+            default=F("quantidade"),
+            output_field=FloatField()
+        )
+
+        qs = qs.annotate(
+            quant_pond_calc=Round(qp_expr, 2),
+        )
+
+        rows = []
+        for item in qs[offset:offset+limit]:
+            comp  = item.componente
+            lista = item.lista_pai
+            rows.append({
+                "lista_id":            lista.id if lista else None,
+                "lista_nome":          lista.nome if lista else "",
+                "componente_id":       comp.id if comp else None,
+                "componente_nome":     getattr(comp, "nome", "") or "",
+                "codigo":              getattr(comp, "codigo", "") or "",
+                "fabricante":          getattr(comp, "fabricante", "") or "",
+                "codigo_fabricante":   getattr(comp, "codigo_fabricante", "") or "",
+                "unidade":             getattr(comp, "unidade", "") or "",
+                "quantidade":          float(item.quantidade or 0),
+                "ponderacao":          float(getattr(item, "ponderacao", 0) or 0),  # seu campo real
+                "tipo_revisao":        getattr(item, "tipo_revisao", "") or "",
+                "comentarios":         getattr(item, "comentarios", "") or "",
+                "quant_ponderada":     float(getattr(item, "quant_pond_calc", 0) or 0),  # 2 casas
+            })
+
+        resp = JsonResponse(rows, safe=False)
+        resp["Cache-Control"] = "no-store"
+        return resp
+
+
+# CSV
+class BOMPlanilhaCSV(APIView):
+    """
+    GET /api/exports/bom/planilha.csv?lista_id=...&search=...
+    """
+    def get(self, request):
+        lista_id = request.GET.get("lista_id")
+        search   = (request.GET.get("search") or "").strip()
+
+        qs = (BOMComponente.objects
+              .select_related("lista_pai", "componente"))
+
+        if lista_id:
+            qs = qs.filter(lista_pai_id=lista_id)
+
+        if search:
+            qs = qs.filter(
+                componente__nome__icontains=search
+            ) | qs.filter(
+                componente__codigo__icontains=search
+            ) | qs.filter(
+                lista_pai__nome__icontains=search
+            )
+
+        def row_iter():
+            header = [
+                "lista_id","lista_nome","componente_id","componente_nome",
+                "codigo","fabricante","codigo_fabricante","unidade",
+                "quantidade","ponderacao","tipo_revisao","comentarios","quant_ponderada"
+            ]
+            yield ",".join(header) + "\n"
+
+            for item in qs.iterator():
+                comp  = item.componente
+                lista = item.lista_pai
+                quantidade = float(item.quantidade or 0)
+                ponder     = float(getattr(item, "ponderacao", 0) or 0)
+
+                # mesma regra: se ponderacao > 0, usa ponderada; senão, usa quantidade
+                if ponder > 0:
+                    qp = quantidade * (ponder / 100.0)
+                else:
+                    qp = quantidade
+
+                row = [
+                    str(lista.id if lista else ""),
+                    (lista.nome if lista else "").replace(",", " "),
+                    str(comp.id if comp else ""),
+                    (getattr(comp, "nome", "") or "").replace(",", " "),
+                    (getattr(comp, "codigo", "") or "").replace(",", " "),
+                    (getattr(comp, "fabricante", "") or "").replace(",", " "),
+                    (getattr(comp, "codigo_fabricante", "") or "").replace(",", " "),
+                    (getattr(comp, "unidade", "") or "").replace(",", " "),
+                    f"{quantidade:.2f}".replace(".", ","),   # 👈 quantidade com vírgula
+                    f"{ponder:.2f}".replace(".", ","),       # 👈 ponderacao com vírgula
+                    (getattr(item, "tipo_revisao", "") or "").replace(",", " "),
+                    (getattr(item, "comentarios", "") or "").replace(",", " "),
+                    f"{qp:.2f}".replace(".", ","),
+                ]
+                yield ",".join(row) + "\n"
+
+        resp = StreamingHttpResponse(row_iter(), content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = 'inline; filename="bom_planilha.csv"'
+        resp["Cache-Control"] = "no-store"
+        return resp
